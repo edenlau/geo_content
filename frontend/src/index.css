@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Custom base styles */
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+    min-height: 100vh;
+  }
+}
+
+/* RTL Support */
+[dir="rtl"] {
+  text-align: right;
+}
+
+[dir="rtl"] .rtl-content {
+  direction: rtl;
+  text-align: right;
+  font-family: 'Noto Sans Arabic', 'Tahoma', 'Traditional Arabic', sans-serif;
+  line-height: 1.8;
+}
+
+[dir="rtl"] ul,
+[dir="rtl"] ol {
+  padding-right: 2rem;
+  padding-left: 0;
+}
+
+[dir="rtl"] blockquote {
+  border-right: 4px solid #d1d5db;
+  border-left: none;
+  padding-right: 1rem;
+  padding-left: 0;
+  margin-right: 1rem;
+  margin-left: 0;
+}
+
+/* Chinese font support */
+.font-chinese {
+  font-family: 'Noto Sans TC', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
+}
+
+/* Score gauge animations */
+@keyframes score-fill {
+  from {
+    stroke-dashoffset: 100;
+  }
+}
+
+.score-gauge {
+  animation: score-fill 1s ease-out forwards;
+}
+
+/* Loading spinner */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin 2s linear infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
