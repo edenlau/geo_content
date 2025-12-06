@@ -5,7 +5,8 @@ Multi-Agent GEO Content Optimization Platform designed to maximize client visibi
 ## Features
 
 - **Automatic Language Detection**: Supports English, Chinese (Traditional/Simplified), and Arabic dialects
-- **Dual-LLM Generation**: Parallel content creation using GPT-4.1-mini and Claude 3.5 Haiku
+- **Dual-LLM Generation**: Parallel content creation using GPT-5 and Claude Sonnet 4.5
+- **Content Rewrite**: Transform existing content with GEO optimizations and style/tone control
 - **Research-Backed Optimization**: Evidence-based GEO strategies with 30-40% visibility improvement
 - **Full Observability**: OpenAI Trace integration for complete workflow tracking
 - **GEO Performance Commentary**: Detailed explanation of optimization decisions
@@ -23,9 +24,9 @@ Multi-Agent GEO Content Optimization Platform designed to maximize client visibi
 | Component | Technology |
 |-----------|------------|
 | Agent Framework | OpenAI Agents SDK |
-| Writer Agent A | GPT-4.1-mini |
-| Writer Agent B | Claude 3.5 Haiku |
-| Evaluator | GPT-4.1 |
+| Writer Agent A | GPT-5 |
+| Writer Agent B | Claude Sonnet 4.5 |
+| Evaluator | o4-mini |
 | Web Harvesting | Pathway |
 | Package Manager | uv |
 | API Framework | FastAPI |
@@ -86,16 +87,36 @@ Access the API documentation at:
 
 ### API Endpoints
 
+#### Content Generation
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/v1/generate` | POST | Generate GEO-optimized content (sync) |
 | `/api/v1/generate/async` | POST | Start async generation (returns job ID) |
 | `/api/v1/jobs/{job_id}` | GET | Check async job status |
+
+#### Content Rewrite
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/rewrite` | POST | Rewrite content with GEO optimizations (sync) |
+| `/api/v1/rewrite/async` | POST | Start async rewrite (returns job ID) |
+| `/api/v1/rewrite/styles` | GET | List available styles and tones |
+| `/api/v1/fetch-url-content` | POST | Fetch URL content preview |
+| `/api/v1/jobs/{job_id}/rewrite/download` | GET | Download rewritten content |
+
+#### Utilities
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
 | `/api/v1/languages` | GET | List supported languages |
 | `/api/v1/strategies` | GET | List GEO strategies |
 | `/api/v1/health` | GET | Health check |
+| `/api/v1/health/deep` | GET | Deep health check (external services) |
 
-### Example Request
+### Example Requests
+
+#### Generate Content
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/generate \
@@ -107,7 +128,26 @@ curl -X POST http://localhost:8000/api/v1/generate \
   }'
 ```
 
+#### Rewrite Content
+
+```bash
+curl -X POST http://localhost:8000/api/v1/rewrite \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_url": "https://example.com/article",
+    "style": "professional",
+    "tone": "authoritative",
+    "preserve_structure": true
+  }'
+```
+
+Available styles: `professional`, `casual`, `academic`, `journalistic`, `marketing`
+
+Available tones: `neutral`, `enthusiastic`, `authoritative`, `conversational`
+
 ### Programmatic Usage
+
+**Generate Content:**
 
 ```python
 import asyncio
@@ -126,6 +166,32 @@ async def main():
     print(f"Content: {response.content}")
     print(f"Score: {response.evaluation_score}/100")
     print(f"Selected: Draft {response.selected_draft}")
+
+asyncio.run(main())
+```
+
+**Rewrite Content:**
+
+```python
+import asyncio
+from geo_content.agents.rewrite_orchestrator import GEORewriteWorkflow
+from geo_content.models import ContentRewriteRequest
+
+async def main():
+    workflow = GEORewriteWorkflow()
+    request = ContentRewriteRequest(
+        source_url="https://example.com/article",
+        style="professional",
+        tone="authoritative",
+        preserve_structure=True,
+    )
+
+    response = await workflow.rewrite_content(request)
+
+    print(f"Original: {response.comparison.original_word_count} words")
+    print(f"Rewritten: {response.comparison.rewritten_word_count} words")
+    print(f"Score: {response.evaluation_score}/100")
+    print(f"Changes: {response.comparison.changes_summary}")
 
 asyncio.run(main())
 ```
@@ -203,7 +269,7 @@ MIT License - See LICENSE file for details.
 
 ## Version
 
-3.2.0
+3.3.0
 
 ---
 

@@ -9,6 +9,11 @@ import type {
   HealthResponse,
   FileUploadResponse,
   JobHistoryResponse,
+  ContentRewriteRequest,
+  ContentRewriteResponse,
+  RewriteStylesResponse,
+  UrlContentPreview,
+  RewriteJobStatusResponse,
 } from './types';
 
 export const geoApi = {
@@ -62,9 +67,53 @@ export const geoApi = {
   getJobHistory: () =>
     apiClient.get<JobHistoryResponse>('/history'),
 
+  // Clear job history
+  clearJobHistory: () =>
+    apiClient.delete<{ success: boolean; deleted_count: number }>('/history'),
+
   // Download generated content
   downloadContent: (jobId: string) =>
     apiClient.get(`/jobs/${jobId}/download`, {
+      responseType: 'blob',
+      timeout: 30000,
+    }),
+
+  // =============================================================================
+  // CONTENT REWRITE ENDPOINTS
+  // =============================================================================
+
+  // Get rewrite styles and tones
+  getRewriteStyles: () =>
+    apiClient.get<RewriteStylesResponse>('/rewrite/styles'),
+
+  // Fetch URL content preview before rewriting
+  fetchUrlContent: (url: string) =>
+    apiClient.post<UrlContentPreview>('/fetch-url-content', null, {
+      params: { url },
+      timeout: 30000,
+    }),
+
+  // Synchronous content rewrite (not recommended for UI - long running)
+  rewriteSync: (data: ContentRewriteRequest) =>
+    apiClient.post<ContentRewriteResponse>('/rewrite', data, {
+      timeout: 300000, // 5 minutes for sync
+    }),
+
+  // Async content rewrite (recommended)
+  rewriteAsync: (data: ContentRewriteRequest) =>
+    apiClient.post<AsyncJobResponse>('/rewrite/async', data, {
+      timeout: 60000, // 60 seconds for async job start
+    }),
+
+  // Poll rewrite job status (reuse same endpoint as generate)
+  getRewriteJobStatus: (jobId: string) =>
+    apiClient.get<RewriteJobStatusResponse>(`/jobs/${jobId}`, {
+      timeout: 10000,
+    }),
+
+  // Download rewritten content
+  downloadRewrittenContent: (jobId: string) =>
+    apiClient.get(`/jobs/${jobId}/rewrite/download`, {
       responseType: 'blob',
       timeout: 30000,
     }),

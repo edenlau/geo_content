@@ -5,12 +5,76 @@ Supports PDF and DOCX document parsing for research input.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from agents import function_tool
 
 logger = logging.getLogger(__name__)
+
+
+def is_valid_text_content(content: str, min_readable_ratio: float = 0.7) -> bool:
+    """
+    Check if content is valid readable text (not binary/garbled).
+
+    Args:
+        content: The text content to validate
+        min_readable_ratio: Minimum ratio of readable characters (default 0.7)
+
+    Returns:
+        True if content appears to be valid text, False otherwise
+    """
+    if not content or len(content) < 10:
+        return False
+
+    # Count printable/readable characters (letters, digits, common punctuation, whitespace)
+    # This regex matches most readable text characters across languages
+    readable_pattern = re.compile(r'[\w\s.,;:!?\'\"()\[\]{}\-–—/\\@#$%&*+=<>|\u0080-\uFFFF]', re.UNICODE)
+    readable_chars = len(readable_pattern.findall(content))
+    total_chars = len(content)
+
+    ratio = readable_chars / total_chars if total_chars > 0 else 0
+
+    # Also check for excessive control characters or null bytes
+    control_chars = sum(1 for c in content if ord(c) < 32 and c not in '\n\r\t')
+    control_ratio = control_chars / total_chars if total_chars > 0 else 0
+
+    if control_ratio > 0.1:  # More than 10% control characters
+        logger.warning(f"Content has high control character ratio: {control_ratio:.2%}")
+        return False
+
+    if ratio < min_readable_ratio:
+        logger.warning(f"Content has low readable character ratio: {ratio:.2%}")
+        return False
+
+    return True
+
+
+def clean_extracted_text(content: str) -> str:
+    """
+    Clean extracted text by removing problematic characters.
+
+    Args:
+        content: Raw extracted text
+
+    Returns:
+        Cleaned text content
+    """
+    if not content:
+        return ""
+
+    # Remove null bytes and other problematic control characters
+    content = content.replace('\x00', '')
+
+    # Remove other control characters except newlines and tabs
+    content = ''.join(c for c in content if ord(c) >= 32 or c in '\n\r\t')
+
+    # Normalize whitespace
+    content = re.sub(r'[ \t]+', ' ', content)
+    content = re.sub(r'\n{3,}', '\n\n', content)
+
+    return content.strip()
 
 # Try to import document parsing libraries
 try:
@@ -82,9 +146,21 @@ def parse_pdf(file_path: str) -> ParsedDocument | None:
         for page in reader.pages:
             text = page.extract_text()
             if text:
-                text_parts.append(text)
+                # Clean each page's text
+                cleaned_text = clean_extracted_text(text)
+                if cleaned_text:
+                    text_parts.append(cleaned_text)
 
         content = "\n\n".join(text_parts)
+
+        # Validate that we got readable text content
+        if not content or not is_valid_text_content(content):
+            logger.error(
+                f"PDF text extraction failed or produced unreadable content: {file_path}. "
+                "The PDF may be a scanned image or have encoding issues."
+            )
+            return None
+
         word_count = len(content.split())
 
         # Extract metadata
@@ -152,6 +228,17 @@ def parse_docx(file_path: str) -> ParsedDocument | None:
                     text_parts.append(" | ".join(row_text))
 
         content = "\n\n".join(text_parts)
+
+        # Clean the extracted content
+        content = clean_extracted_text(content)
+
+        # Validate that we got readable text content
+        if not content or not is_valid_text_content(content):
+            logger.error(
+                f"DOCX text extraction failed or produced unreadable content: {file_path}."
+            )
+            return None
+
         word_count = len(content.split())
 
         # Extract metadata from core properties

@@ -1,22 +1,23 @@
 import { RefreshCw, Download, History, Clock, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { GenerationForm } from '../components/forms/GenerationForm';
+import { RewriteForm } from '../components/forms/RewriteForm';
 import { JobStatusCard } from '../components/status/JobStatusCard';
 import { ProgressIndicator } from '../components/status/ProgressIndicator';
-import { ContentDisplay } from '../components/results/ContentDisplay';
-import { EvaluationScores } from '../components/results/EvaluationScores';
+import { ContentComparison } from '../components/results/ContentComparison';
+import { OptimizationsApplied } from '../components/results/OptimizationsApplied';
+import { RewriteEvaluationScores } from '../components/results/RewriteEvaluationScores';
 import { GeoCommentary } from '../components/results/GeoCommentary';
 import { GeoInsights } from '../components/results/GeoInsights';
 import { TraceLink } from '../components/common/TraceLink';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
-import { useContentGeneration } from '../hooks/useContentGeneration';
+import { useContentRewrite } from '../hooks/useContentRewrite';
 import { formatDuration } from '../utils/formatters';
 import { geoApi } from '../api/endpoints';
 import type { JobHistoryItem } from '../api/types';
 
-export function Generate() {
+export function Rewrite() {
   const {
     submit,
     isSubmitting,
@@ -27,7 +28,11 @@ export function Generate() {
     isPolling,
     elapsedTime,
     reset,
-  } = useContentGeneration();
+    fetchPreview,
+    isFetchingPreview,
+    preview,
+    clearPreview,
+  } = useContentRewrite();
 
   const [jobHistory, setJobHistory] = useState<JobHistoryItem[]>([]);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -38,6 +43,8 @@ export function Generate() {
     const fetchHistory = async () => {
       try {
         const response = await geoApi.getJobHistory();
+        // Filter for rewrite jobs if we have a way to identify them
+        // For now, show all jobs
         setJobHistory(response.data.jobs);
       } catch (err) {
         console.error('Failed to fetch job history:', err);
@@ -49,12 +56,12 @@ export function Generate() {
   const handleDownload = async (downloadJobId: string) => {
     setIsDownloading(true);
     try {
-      const response = await geoApi.downloadContent(downloadJobId);
+      const response = await geoApi.downloadRewrittenContent(downloadJobId);
       const blob = new Blob([response.data], { type: 'text/markdown' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `geo_content_${downloadJobId}.md`;
+      a.download = `geo_rewritten_${downloadJobId}.md`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -91,18 +98,21 @@ export function Generate() {
         {/* Page Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Generate Content</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Rewrite Content</h2>
             <p className="text-gray-500 mt-1">
-              Create GEO-optimized content for generative search engines
+              Optimize existing content for generative search engines
             </p>
           </div>
           {(isComplete || error) && (
             <Button
               variant="outline"
-              onClick={reset}
+              onClick={() => {
+                reset();
+                clearPreview();
+              }}
               leftIcon={<RefreshCw className="w-4 h-4" />}
             >
-              New Generation
+              New Rewrite
             </Button>
           )}
         </div>
@@ -110,10 +120,14 @@ export function Generate() {
         {/* Form Section */}
         {isIdle && (
           <Card>
-            <GenerationForm
+            <RewriteForm
               onSubmit={submit}
               isSubmitting={isSubmitting}
               disabled={isProcessing}
+              onFetchPreview={fetchPreview}
+              isFetchingPreview={isFetchingPreview}
+              preview={preview}
+              onClearPreview={clearPreview}
             />
           </Card>
         )}
@@ -127,7 +141,7 @@ export function Generate() {
               elapsedTime={elapsedTime}
               error={error}
             />
-            <Card title="Generation Progress">
+            <Card title="Rewrite Progress">
               <ProgressIndicator
                 elapsedTime={elapsedTime}
                 isComplete={false}
@@ -141,11 +155,14 @@ export function Generate() {
         {error && !isProcessing && (
           <Card className="border-red-200 bg-red-50">
             <div className="text-center py-4">
-              <p className="text-red-600 font-medium">Generation Failed</p>
+              <p className="text-red-600 font-medium">Rewrite Failed</p>
               <p className="text-red-500 text-sm mt-2">{error}</p>
               <Button
                 variant="outline"
-                onClick={reset}
+                onClick={() => {
+                  reset();
+                  clearPreview();
+                }}
                 className="mt-4"
                 leftIcon={<RefreshCw className="w-4 h-4" />}
               >
@@ -163,7 +180,7 @@ export function Generate() {
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-6">
                   <div>
-                    <p className="text-sm text-gray-500">Generation Time</p>
+                    <p className="text-sm text-gray-500">Rewrite Time</p>
                     <p className="font-medium">{formatDuration(result.generation_time_ms)}</p>
                   </div>
                   <div>
@@ -174,41 +191,60 @@ export function Generate() {
                     <p className="text-sm text-gray-500">Direction</p>
                     <p className="font-medium uppercase">{result.writing_direction}</p>
                   </div>
+                  {result.style_applied && (
+                    <div>
+                      <p className="text-sm text-gray-500">Style</p>
+                      <p className="font-medium capitalize">{result.style_applied}</p>
+                    </div>
+                  )}
+                  {result.tone_applied && (
+                    <div>
+                      <p className="text-sm text-gray-500">Tone</p>
+                      <p className="font-medium capitalize">{result.tone_applied}</p>
+                    </div>
+                  )}
                 </div>
                 <TraceLink traceId={result.trace_id} traceUrl={result.trace_url} />
               </div>
             </Card>
 
-            {/* Evaluation Scores */}
-            <EvaluationScores
-              overallScore={result.evaluation_score}
-              selectedDraft={result.selected_draft}
-              iterations={result.evaluation_iterations}
-              geoAnalysis={result.geo_analysis}
-              modelsUsed={result.models_used}
-            />
+            {/* Content Comparison */}
+            {result.comparison && (
+              <ContentComparison
+                comparison={result.comparison}
+                languageCode={result.language_code}
+                writingDirection={result.writing_direction}
+                detectedLanguage={result.detected_language}
+              />
+            )}
 
-            {/* Generated Content */}
-            <ContentDisplay
-              content={result.content}
-              wordCount={result.word_count}
-              languageCode={result.language_code}
-              writingDirection={result.writing_direction}
-              detectedLanguage={result.detected_language}
-            />
+            {/* GEO Optimizations Applied */}
+            {result.optimizations_applied && (
+              <OptimizationsApplied optimizations={result.optimizations_applied} />
+            )}
+
+            {/* Evaluation Scores */}
+            {result.optimizations_applied && (
+              <RewriteEvaluationScores
+                overallScore={result.evaluation_score}
+                iterations={result.evaluation_iterations}
+                optimizations={result.optimizations_applied}
+                modelsUsed={result.models_used}
+              />
+            )}
 
             {/* GEO Commentary */}
             <GeoCommentary commentary={result.geo_commentary} />
 
-            {/* GEO Insights - NEW Enhanced Insights */}
+            {/* GEO Insights */}
             {result.geo_insights && <GeoInsights insights={result.geo_insights} />}
 
             {/* Download Button */}
             <Card>
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-medium text-gray-900">Download Content</h3>
-                  <p className="text-sm text-gray-500">Save the generated content as a Markdown file</p>
+                  <h3 className="font-medium text-gray-900">Download Rewritten Content</h3>
+                  <p className="text-sm text-gray-500">Save the optimized content as a Markdown file</p>
                 </div>
                 <Button
                   onClick={() => handleDownload(jobId!)}
@@ -225,11 +261,11 @@ export function Generate() {
 
         {/* Job History Section */}
         {jobHistory.length > 0 && (
-          <Card title="Recent Generations" className="mt-8">
+          <Card title="Recent Jobs" className="mt-8">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2 text-sm text-gray-500">
                 <History className="w-4 h-4" />
-                <span>Last {jobHistory.length} completed generations</span>
+                <span>Last {jobHistory.length} completed jobs</span>
               </div>
               <Button
                 variant="outline"
@@ -288,4 +324,4 @@ export function Generate() {
   );
 }
 
-export default Generate;
+export default Rewrite;

@@ -196,3 +196,126 @@ export interface JobHistoryResponse {
   jobs: JobHistoryItem[];
   total_count: number;
 }
+
+// =============================================================================
+// CONTENT REWRITE TYPES
+// =============================================================================
+
+// Rewrite style and tone types
+export type RewriteStyle = 'professional' | 'casual' | 'academic' | 'journalistic' | 'marketing';
+export type RewriteTone = 'neutral' | 'enthusiastic' | 'authoritative' | 'conversational';
+
+// Rewrite request
+export interface ContentRewriteRequest {
+  source_url?: string;
+  source_file_path?: string;
+  source_text?: string;
+  style?: RewriteStyle;
+  tone?: RewriteTone;
+  preserve_structure?: boolean;
+  target_word_count?: number;
+  reference_urls?: string[];
+  reference_documents?: string[];
+  client_name?: string;
+  language_override?: string;
+}
+
+// Comparison between original and rewritten content
+export interface RewriteComparison {
+  original_content: string;
+  original_word_count: number;
+  original_language: string;
+  rewritten_content: string;
+  rewritten_word_count: number;
+  changes_summary: string[];
+}
+
+// GEO optimizations that were applied
+export interface GEOOptimizationsApplied {
+  statistics_added: number;
+  statistics_original: number;
+  citations_added: number;
+  citations_original: number;
+  quotations_added: number;
+  quotations_original: number;
+  fluency_improvements: string[];
+  structure_changes: string[];
+  eeat_enhancements: string[];
+}
+
+// Full rewrite response
+export interface ContentRewriteResponse {
+  // Request tracking
+  job_id: string;
+  trace_id: string;
+  trace_url: string;
+
+  // Language
+  detected_language: string;
+  language_code: string;
+  writing_direction: 'ltr' | 'rtl';
+
+  // Comparison
+  comparison: RewriteComparison;
+
+  // Optimizations
+  optimizations_applied: GEOOptimizationsApplied;
+
+  // Style/tone used
+  style_applied: RewriteStyle;
+  tone_applied: RewriteTone;
+
+  // Evaluation
+  evaluation_score: number;
+  evaluation_iterations: number;
+
+  // GEO Commentary
+  geo_commentary: GEOPerformanceCommentary;
+  geo_insights?: any;
+
+  // Metadata
+  generation_time_ms: number;
+  models_used: ModelsUsed;
+  timestamp: string;
+}
+
+// Rewrite job status response (extends base job status)
+export interface RewriteJobStatusResponse {
+  job_id: string;
+  status: JobStatus;
+  created_at: string;
+  completed_at?: string;
+  result?: ContentRewriteResponse;
+  error?: string;
+}
+
+// Style info for dropdown
+export interface RewriteStyleInfo {
+  id: RewriteStyle;
+  name: string;
+  description: string;
+}
+
+// Tone info for dropdown
+export interface RewriteToneInfo {
+  id: RewriteTone;
+  name: string;
+  description: string;
+}
+
+// Styles response
+export interface RewriteStylesResponse {
+  styles: RewriteStyleInfo[];
+  tones: RewriteToneInfo[];
+}
+
+// URL content preview
+export interface UrlContentPreview {
+  url: string;
+  title: string;
+  content_preview: string;
+  full_content: string;
+  word_count: number;
+  language: string;
+  fetch_time_ms: number;
+}

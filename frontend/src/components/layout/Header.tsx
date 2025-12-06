@@ -1,5 +1,6 @@
-import { Activity } from 'lucide-react';
+import { Activity, Sparkles, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { NavLink } from 'react-router-dom';
 import { geoApi } from '../../api/endpoints';
 import { cn } from '../../utils/cn';
 
@@ -29,6 +30,38 @@ export function Header() {
           <div>
             <h1 className="text-2xl font-bold text-white">Tocanan GEO Action</h1>
           </div>
+
+          {/* Tab Navigation */}
+          <nav className="flex items-center gap-1">
+            <NavLink
+              to="/generate"
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium',
+                  isActive
+                    ? 'bg-amber-500 text-white'
+                    : 'text-gray-300 hover:bg-slate-700 hover:text-white'
+                )
+              }
+            >
+              <Sparkles className="w-4 h-4" />
+              Generate
+            </NavLink>
+            <NavLink
+              to="/rewrite"
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium',
+                  isActive
+                    ? 'bg-amber-500 text-white'
+                    : 'text-gray-300 hover:bg-slate-700 hover:text-white'
+                )
+              }
+            >
+              <RefreshCw className="w-4 h-4" />
+              Rewrite
+            </NavLink>
+          </nav>
 
           {/* Status indicator */}
           <div className="flex items-center gap-2">

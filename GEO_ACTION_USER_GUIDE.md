@@ -159,10 +159,10 @@ Each piece of generated content receives an **E-E-A-T score (0-10)** across thes
 
 GEO Action generates **two drafts in parallel** using different AI models:
 
-- **Draft A (GPT-4.1-mini):** Fast, cost-effective, excellent at data integration
-- **Draft B (Claude 3.5 Haiku):** Natural fluency, speed, strong reasoning
+- **Draft A (GPT-5):** Advanced reasoning, excellent at research integration and data synthesis
+- **Draft B (Claude Sonnet 4.5):** Natural fluency, nuanced writing, strong contextual understanding
 
-**Evaluator Agent** scores both drafts across 12 criteria and selects the higher-quality version.
+**Evaluator Agent (o4-mini)** scores both drafts across 12 criteria using advanced reasoning and selects the higher-quality version.
 
 **Why this matters:** Different AI models have different strengths. By generating both and selecting the best, you get **best-of-breed output** every time.
 
@@ -382,8 +382,8 @@ A **0-100 score** with breakdown across 12 criteria:
 
 You'll see **"Draft A Selected"** or **"Draft B Selected"** indicating which AI model produced the better output.
 
-- **Draft A (GPT-4.1-mini):** Often excels at data integration, statistics
-- **Draft B (Claude 3.5 Haiku):** Often excels at natural fluency, readability
+- **Draft A (GPT-5):** Often excels at research synthesis, data integration, and comprehensive coverage
+- **Draft B (Claude Sonnet 4.5):** Often excels at natural fluency, readability, and nuanced expression
 
 ### Actions to Take:
 
@@ -1830,11 +1830,11 @@ Now that you understand each output component, here's your step-by-step workflow
 
 ---
 
-**Document Version:** 1.0 | December 2025
+**Document Version:** 1.1 | December 2025
 
-**Last Updated:** December 2, 2025
+**Last Updated:** December 6, 2025
 
-**Platform Version:** GEO Action v1.0
+**Platform Version:** GEO Action v3.3.0
 
 ---
 
