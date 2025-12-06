@@ -6,8 +6,8 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=geo_content
-Group=geo_content
+User=ec2-user
+Group=ec2-user
 WorkingDirectory=/opt/geo_content
 
 # Environment variables for production
@@ -19,7 +19,7 @@ Environment=DB_PATH=/var/lib/geo_content/jobs.db
 Environment=CORS_ORIGINS=http://geo-content-frontend-053955129008.s3-website-ap-southeast-1.amazonaws.com,http://18.138.26.110
 
 # Use uv to run the application
-ExecStart=/root/.local/bin/uv run uvicorn geo_content.main:app --host 127.0.0.1 --port 8000 --workers 2
+ExecStart=/home/ec2-user/.local/bin/uv run uvicorn geo_content.main:app --host 127.0.0.1 --port 8000 --workers 2
 
 # Graceful shutdown configuration
 TimeoutStopSec=30
@@ -45,7 +45,7 @@ StandardError=append:/var/log/geo_content/error.log
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=false
 ReadWritePaths=/var/lib/geo_content /var/log/geo_content /tmp/geo_content_uploads
 
 [Install]
