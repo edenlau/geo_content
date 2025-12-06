@@ -16,7 +16,7 @@ Environment=AWS_REGION=ap-southeast-1
 Environment=AWS_SECRET_NAME=geo-content/api-keys
 Environment=S3_BUCKET_UPLOADS=geo-content-uploads-053955129008
 Environment=DB_PATH=/var/lib/geo_content/jobs.db
-Environment=CORS_ORIGINS=http://geo-content-frontend-053955129008.s3-website-ap-southeast-1.amazonaws.com,http://18.138.26.110
+Environment=CORS_ORIGINS=http://geo-content-frontend-053955129008.s3-website-ap-southeast-1.amazonaws.com,http://18.138.26.110,https://geoaction.tocanan.ai,https://api-geoaction.tocanan.ai
 
 # Use uv to run the application
 ExecStart=/home/ec2-user/.local/bin/uv run uvicorn geo_content.main:app --host 127.0.0.1 --port 8000 --workers 2
