@@ -2,12 +2,16 @@
 Document parsing tool for GEO Content Platform.
 
 Supports PDF and DOCX document parsing for research input.
+Handles both local files and S3 URLs.
 """
 
 import logging
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from agents import function_tool
 
@@ -92,6 +96,41 @@ try:
 except ImportError:
     DOCX_SUPPORT = False
     DocxDocument = None
+
+
+def _download_s3_file(s3_url: str) -> str | None:
+    """
+    Download a file from S3 to a temporary location.
+
+    Args:
+        s3_url: S3 URL in format s3://bucket/key
+
+    Returns:
+        Local temporary file path, or None if download fails
+    """
+    try:
+        import boto3
+
+        parsed = urlparse(s3_url)
+        bucket = parsed.netloc
+        key = parsed.path.lstrip("/")
+
+        # Get file extension for temp file
+        suffix = Path(key).suffix
+
+        # Create temp file with same extension
+        fd, temp_path = tempfile.mkstemp(suffix=suffix)
+        os.close(fd)
+
+        s3_client = boto3.client("s3")
+        s3_client.download_file(bucket, key, temp_path)
+
+        logger.info(f"Downloaded S3 file to: {temp_path}")
+        return temp_path
+
+    except Exception as e:
+        logger.error(f"Failed to download S3 file {s3_url}: {e}")
+        return None
 
 
 @dataclass
@@ -323,25 +362,55 @@ def parse_document(file_path: str) -> ParsedDocument | None:
     Parse a document based on its file extension.
 
     Supports: PDF, DOCX, TXT, MD
+    Handles both local file paths and S3 URLs (s3://bucket/key).
 
     Args:
-        file_path: Path to the document
+        file_path: Path to the document (local path or S3 URL)
 
     Returns:
         ParsedDocument or None if parsing fails or format not supported
     """
-    path = Path(file_path)
-    suffix = path.suffix.lower()
+    # Handle S3 URLs by downloading to temp file first
+    temp_file = None
+    original_path = file_path
 
-    if suffix == ".pdf":
-        return parse_pdf(file_path)
-    elif suffix in [".docx", ".doc"]:
-        return parse_docx(file_path)
-    elif suffix in [".txt", ".md", ".markdown"]:
-        return parse_text(file_path)
+    if file_path.startswith("s3://"):
+        temp_file = _download_s3_file(file_path)
+        if not temp_file:
+            logger.error(f"Could not download S3 file: {file_path}")
+            return None
+        local_path = temp_file
     else:
-        logger.error(f"Unsupported file format: {suffix}")
-        return None
+        local_path = file_path
+
+    try:
+        path = Path(local_path)
+        suffix = path.suffix.lower()
+
+        if suffix == ".pdf":
+            result = parse_pdf(local_path)
+        elif suffix in [".docx", ".doc"]:
+            result = parse_docx(local_path)
+        elif suffix in [".txt", ".md", ".markdown"]:
+            result = parse_text(local_path)
+        else:
+            logger.error(f"Unsupported file format: {suffix}")
+            result = None
+
+        # Restore original S3 URL in the result
+        if result and temp_file:
+            result.file_path = original_path
+
+        return result
+
+    finally:
+        # Clean up temp file
+        if temp_file and Path(temp_file).exists():
+            try:
+                Path(temp_file).unlink()
+                logger.debug(f"Cleaned up temp file: {temp_file}")
+            except Exception as e:
+                logger.warning(f"Could not delete temp file {temp_file}: {e}")
 
 
 def parse_documents(file_paths: list[str]) -> list[ParsedDocument]:
