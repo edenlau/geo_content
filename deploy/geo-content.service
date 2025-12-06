@@ -41,12 +41,8 @@ LimitNOFILE=65535
 StandardOutput=append:/var/log/geo_content/app.log
 StandardError=append:/var/log/geo_content/error.log
 
-# Security hardening (relaxed for ec2-user environment)
+# Security hardening
 NoNewPrivileges=true
-PrivateTmp=false
-ProtectSystem=full
-ProtectHome=false
-ReadWritePaths=/var/lib/geo_content /var/log/geo_content /tmp/geo_content_uploads /opt/geo_content
 
 [Install]
 WantedBy=multi-user.target
