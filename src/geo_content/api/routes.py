@@ -6,30 +6,73 @@ Supports both in-memory and SQLite job storage, local and S3 file uploads.
 
 import logging
 import shutil
+import threading
 import uuid
 from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
-from geo_content.api.dependencies import SettingsDep, WorkflowDep
+from geo_content.api.dependencies import RewriteWorkflowDep, SettingsDep, WorkflowDep
+from geo_content.api.exceptions import JobNotFoundError, JobQueueFullError
 from geo_content.agents.orchestrator import GEOContentWorkflow
+from geo_content.agents.rewrite_orchestrator import GEORewriteWorkflow
 from geo_content.config import settings
 from geo_content.db import get_job_database
 from geo_content.models import ContentGenerationRequest, ContentGenerationResponse
+from geo_content.models.rewrite_schemas import (
+    ContentRewriteRequest,
+    ContentRewriteResponse,
+    RewriteStyleInfo,
+    RewriteStylesResponse,
+    RewriteToneInfo,
+    UrlContentPreview,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["GEO Content"])
+
+# Rate limiter - will be initialized from app.state in endpoints
+limiter = Limiter(key_func=get_remote_address)
 
 # In-memory job storage (fallback when SQLite not configured)
 _job_storage: dict[str, dict[str, Any]] = {}
 
 # Job history (last 10 completed jobs) - fallback
 _job_history: deque[dict[str, Any]] = deque(maxlen=50)
+
+# Concurrent job tracking
+_active_jobs: set[str] = set()
+_active_jobs_lock = threading.Lock()
+
+
+def _get_active_job_count() -> int:
+    """Get the current number of active jobs."""
+    with _active_jobs_lock:
+        return len(_active_jobs)
+
+
+def _add_active_job(job_id: str) -> bool:
+    """
+    Add a job to the active set. Returns False if queue is full.
+    """
+    with _active_jobs_lock:
+        if len(_active_jobs) >= settings.max_concurrent_jobs:
+            return False
+        _active_jobs.add(job_id)
+        return True
+
+
+def _remove_active_job(job_id: str):
+    """Remove a job from the active set."""
+    with _active_jobs_lock:
+        _active_jobs.discard(job_id)
 
 # Local upload directory (fallback when S3 not configured)
 UPLOAD_DIR = Path("/tmp/geo_content_uploads")
@@ -58,9 +101,11 @@ async def health_check() -> dict:
     return {
         "status": "healthy",
         "service": "geo-content-platform",
-        "version": "3.2.0",
+        "version": "3.3.0",
         "timestamp": datetime.utcnow().isoformat(),
         "environment": settings.environment,
+        "active_jobs": _get_active_job_count(),
+        "max_concurrent_jobs": settings.max_concurrent_jobs,
     }
 
 
@@ -76,6 +121,7 @@ async def deep_health_check() -> dict:
         "database": "not_configured",
         "s3": "not_configured",
         "secrets_manager": "not_configured",
+        "tavily": "not_configured",
     }
     overall_status = "healthy"
 
@@ -83,9 +129,13 @@ async def deep_health_check() -> dict:
     db = get_job_database()
     if db:
         try:
-            # Simple query to verify database
-            db.get_recent_jobs(limit=1)
-            checks["database"] = "healthy"
+            # Use health_check method if available
+            if hasattr(db, "health_check") and db.health_check():
+                checks["database"] = "healthy"
+            else:
+                # Fallback to simple query
+                db.get_recent_jobs(limit=1)
+                checks["database"] = "healthy"
         except Exception as e:
             checks["database"] = f"unhealthy: {e}"
             overall_status = "degraded"
@@ -112,13 +162,29 @@ async def deep_health_check() -> dict:
             checks["secrets_manager"] = f"unhealthy: {e}"
             # Don't mark as degraded if secrets already loaded
 
+    # Check Tavily API key is configured
+    if settings.tavily_api_key:
+        checks["tavily"] = "configured"
+    else:
+        checks["tavily"] = "not_configured"
+
+    # Job queue status
+    active_jobs = _get_active_job_count()
+    queue_capacity = settings.max_concurrent_jobs - active_jobs
+
     return {
         "status": overall_status,
         "service": "geo-content-platform",
-        "version": "3.2.0",
+        "version": "3.3.0",
         "timestamp": datetime.utcnow().isoformat(),
         "environment": settings.environment,
         "checks": checks,
+        "job_queue": {
+            "active_jobs": active_jobs,
+            "max_concurrent_jobs": settings.max_concurrent_jobs,
+            "available_capacity": queue_capacity,
+            "queue_full": queue_capacity <= 0,
+        },
     }
 
 
@@ -133,8 +199,8 @@ async def deep_health_check() -> dict:
     This endpoint:
     1. Detects the language of the input question
     2. Conducts research using web search and provided references
-    3. Generates two content drafts in parallel (GPT-4.1-mini + Claude 3.5 Haiku)
-    4. Evaluates and selects the best draft
+    3. Generates two content drafts in parallel (GPT-5 + Claude Sonnet 4.5)
+    4. Evaluates and selects the best draft using o4-mini
     5. Returns the optimized content with GEO performance commentary
     """,
 )
@@ -480,6 +546,34 @@ async def get_job_history() -> dict:
         }
 
 
+@router.delete(
+    "/history",
+    summary="Clear job history",
+    description="Clear all completed jobs from history.",
+)
+async def clear_job_history() -> dict:
+    """
+    Clear all completed jobs from history.
+    """
+    db = get_job_database()
+
+    if db:
+        deleted_count = db.clear_all_jobs()
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "storage": "sqlite",
+        }
+    else:
+        deleted_count = len(_job_history)
+        _job_history.clear()
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "storage": "memory",
+        }
+
+
 @router.get(
     "/jobs/{job_id}/download",
     summary="Download generated content",
@@ -570,5 +664,355 @@ async def download_content(job_id: str) -> Response:
         media_type="text/markdown",
         headers={
             "Content-Disposition": f'attachment; filename="geo_content_{job_id}.md"',
+        },
+    )
+
+
+# =============================================================================
+# CONTENT REWRITE ENDPOINTS
+# =============================================================================
+
+
+@router.get(
+    "/rewrite/styles",
+    response_model=RewriteStylesResponse,
+    summary="Get rewrite styles and tones",
+    description="Get available writing styles and tones for content rewriting.",
+)
+async def get_rewrite_styles() -> RewriteStylesResponse:
+    """Get available rewrite styles and tones."""
+    return RewriteStylesResponse(
+        styles=[
+            RewriteStyleInfo(
+                id="professional",
+                name="Professional",
+                description="Formal business language with polished, corporate tone",
+            ),
+            RewriteStyleInfo(
+                id="casual",
+                name="Casual",
+                description="Friendly, conversational language with relatable examples",
+            ),
+            RewriteStyleInfo(
+                id="academic",
+                name="Academic",
+                description="Scholarly language with proper citations and analysis",
+            ),
+            RewriteStyleInfo(
+                id="journalistic",
+                name="Journalistic",
+                description="Clear, factual reporting style with inverted pyramid structure",
+            ),
+            RewriteStyleInfo(
+                id="marketing",
+                name="Marketing",
+                description="Persuasive, benefit-focused language with calls to action",
+            ),
+        ],
+        tones=[
+            RewriteToneInfo(
+                id="neutral",
+                name="Neutral",
+                description="Balanced, objective perspective with factual presentation",
+            ),
+            RewriteToneInfo(
+                id="enthusiastic",
+                name="Enthusiastic",
+                description="Energetic, positive language while staying credible",
+            ),
+            RewriteToneInfo(
+                id="authoritative",
+                name="Authoritative",
+                description="Confident, expert voice with definitive statements",
+            ),
+            RewriteToneInfo(
+                id="conversational",
+                name="Conversational",
+                description="Direct, personal style as if speaking to the reader",
+            ),
+        ],
+    )
+
+
+@router.post(
+    "/rewrite",
+    response_model=ContentRewriteResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Rewrite content with GEO optimizations",
+    description="""
+    Rewrite existing content with GEO optimizations.
+
+    This endpoint:
+    1. Extracts content from URL or file
+    2. Detects the language
+    3. Conducts research to enhance with facts/statistics
+    4. Rewrites with GEO optimizations and style/tone adjustments
+    5. Evaluates the rewritten content
+    6. Returns comparison and analysis
+    """,
+)
+async def rewrite_content(
+    request: ContentRewriteRequest,
+    workflow: RewriteWorkflowDep,
+) -> ContentRewriteResponse:
+    """Rewrite content with GEO optimizations."""
+    try:
+        logger.info(f"Rewriting content: style={request.style}, tone={request.tone}")
+
+        response = await workflow.rewrite_content(request)
+
+        logger.info(f"Content rewritten successfully. Job ID: {response.job_id}")
+        logger.info(f"Score: {response.evaluation_score}, Iterations: {response.evaluation_iterations}")
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Content rewrite failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Content rewrite failed: {str(e)}",
+        )
+
+
+@router.post(
+    "/rewrite/async",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Rewrite content asynchronously",
+    description="Start content rewriting in background and return job ID for polling.",
+)
+async def rewrite_content_async(
+    request: ContentRewriteRequest,
+    workflow: RewriteWorkflowDep,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """Start asynchronous content rewriting."""
+    job_id = f"rewrite_{uuid.uuid4().hex[:12]}"
+    created_at = datetime.utcnow().isoformat()
+
+    # Use SQLite if configured, otherwise in-memory
+    db = get_job_database()
+    if db:
+        db.create_job(job_id, request.model_dump())
+    else:
+        _job_storage[job_id] = {
+            "status": "pending",
+            "created_at": created_at,
+            "request": request.model_dump(),
+            "result": None,
+            "error": None,
+            "job_type": "rewrite",
+        }
+
+    logger.info(
+        f"[{job_id}] Async rewrite job created: style={request.style}, tone={request.tone}"
+    )
+
+    # Add background task
+    background_tasks.add_task(_run_rewrite, job_id, request, workflow)
+
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "status_url": f"/api/v1/jobs/{job_id}",
+        "message": "Content rewriting started. Poll the status URL for results.",
+    }
+
+
+async def _run_rewrite(
+    job_id: str,
+    request: ContentRewriteRequest,
+    workflow: GEORewriteWorkflow,
+) -> None:
+    """Background task to run content rewriting."""
+    db = get_job_database()
+
+    try:
+        logger.info(f"[{job_id}] Status transition: pending -> processing")
+
+        if db:
+            db.update_job_status(job_id, "processing")
+        else:
+            _job_storage[job_id]["status"] = "processing"
+
+        response = await workflow.rewrite_content(request)
+
+        if db:
+            db.complete_job(job_id, response.model_dump())
+        else:
+            _job_storage[job_id]["status"] = "completed"
+            _job_storage[job_id]["result"] = response.model_dump()
+            _job_storage[job_id]["completed_at"] = datetime.utcnow().isoformat()
+
+            # Add to job history
+            _job_history.append({
+                "job_id": job_id,
+                "job_type": "rewrite",
+                "client_name": request.client_name or "Content Rewrite",
+                "target_question": f"Rewrite ({request.style}/{request.tone})",
+                "evaluation_score": response.evaluation_score,
+                "word_count": response.comparison.rewritten_word_count,
+                "completed_at": datetime.utcnow().isoformat(),
+                "generation_time_ms": response.generation_time_ms,
+            })
+
+        logger.info(
+            f"[{job_id}] Status transition: processing -> completed "
+            f"(word_count={response.comparison.rewritten_word_count}, "
+            f"score={response.evaluation_score:.1f}, "
+            f"time={response.generation_time_ms}ms)"
+        )
+
+    except Exception as e:
+        logger.error(f"[{job_id}] Status transition: processing -> failed ({e})")
+
+        if db:
+            db.fail_job(job_id, str(e))
+        else:
+            _job_storage[job_id]["status"] = "failed"
+            _job_storage[job_id]["error"] = str(e)
+            _job_storage[job_id]["completed_at"] = datetime.utcnow().isoformat()
+
+
+@router.post(
+    "/fetch-url-content",
+    response_model=UrlContentPreview,
+    summary="Fetch URL content preview",
+    description="Fetch and preview content from a URL before rewriting.",
+)
+async def fetch_url_content(
+    url: str,
+    workflow: RewriteWorkflowDep,
+) -> UrlContentPreview:
+    """Fetch and preview content from a URL."""
+    try:
+        logger.info(f"Fetching URL preview: {url}")
+
+        preview = await workflow.fetch_url_preview(url)
+
+        logger.info(f"URL fetched: {preview.word_count} words, language={preview.language}")
+
+        return preview
+
+    except Exception as e:
+        logger.error(f"URL fetch failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to fetch URL content: {str(e)}",
+        )
+
+
+@router.get(
+    "/jobs/{job_id}/rewrite/download",
+    summary="Download rewritten content",
+    description="Download the rewritten content as a markdown file with comparison.",
+)
+async def download_rewritten_content(job_id: str) -> Response:
+    """Download rewritten content for a completed rewrite job."""
+    db = get_job_database()
+
+    if db:
+        job = db.get_job(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job {job_id} not found",
+            )
+        if job["status"] != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Job {job_id} is not completed (status: {job['status']})",
+            )
+        result = job.get("result", {})
+        request = job.get("request", {})
+        completed_at = job.get("completed_at", "Unknown")
+    else:
+        if job_id not in _job_storage:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job {job_id} not found",
+            )
+
+        job = _job_storage[job_id]
+
+        if job["status"] != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Job {job_id} is not completed (status: {job['status']})",
+            )
+
+        result = job["result"]
+        request = job["request"]
+        completed_at = job.get("completed_at", "Unknown")
+
+    # Extract comparison data
+    comparison = result.get("comparison", {})
+    optimizations = result.get("optimizations_applied", {})
+
+    # Create markdown content with comparison
+    md_content = f"""# Content Rewrite Report
+
+**Rewritten:** {completed_at}
+**Style:** {result.get('style_applied', 'professional')}
+**Tone:** {result.get('tone_applied', 'neutral')}
+**Evaluation Score:** {result.get('evaluation_score', 0):.1f}/100
+**Language:** {result.get('detected_language', 'Unknown')} ({result.get('language_code', 'Unknown')})
+
+---
+
+## Summary of Changes
+
+{chr(10).join(f'- {change}' for change in comparison.get('changes_summary', []))}
+
+---
+
+## GEO Optimizations Applied
+
+- **Statistics Added:** {optimizations.get('statistics_added', 0)} (original had {optimizations.get('statistics_original', 0)})
+- **Citations Added:** {optimizations.get('citations_added', 0)} (original had {optimizations.get('citations_original', 0)})
+- **Quotations Added:** {optimizations.get('quotations_added', 0)} (original had {optimizations.get('quotations_original', 0)})
+
+### Fluency Improvements
+{chr(10).join(f'- {imp}' for imp in optimizations.get('fluency_improvements', []))}
+
+### E-E-A-T Enhancements
+{chr(10).join(f'- {enh}' for enh in optimizations.get('eeat_enhancements', []))}
+
+---
+
+## Rewritten Content
+
+**Word Count:** {comparison.get('rewritten_word_count', 0)}
+
+{comparison.get('rewritten_content', '')}
+
+---
+
+## Original Content (for reference)
+
+**Word Count:** {comparison.get('original_word_count', 0)}
+
+{comparison.get('original_content', '')}
+
+---
+
+## Key Strengths
+
+{chr(10).join(f'- {s}' for s in result.get('geo_commentary', {}).get('key_strengths', []))}
+
+## Suggestions for Further Improvement
+
+{chr(10).join(f'- {s}' for s in result.get('geo_commentary', {}).get('suggestions', []))}
+
+---
+
+*Rewritten by Tocanan GEO Content Platform*
+*Job ID: {job_id}*
+"""
+
+    return Response(
+        content=md_content,
+        media_type="text/markdown",
+        headers={
+            "Content-Disposition": f'attachment; filename="geo_rewrite_{job_id}.md"',
         },
     )

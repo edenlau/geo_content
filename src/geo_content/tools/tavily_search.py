@@ -9,10 +9,32 @@ from dataclasses import dataclass
 
 import httpx
 from agents import function_tool
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    before_sleep_log,
+)
 
 from geo_content.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _create_retry_decorator():
+    """Create a retry decorator with settings from config."""
+    return retry(
+        stop=stop_after_attempt(settings.retry_max_attempts),
+        wait=wait_exponential(
+            multiplier=1,
+            min=settings.retry_min_wait_seconds,
+            max=settings.retry_max_wait_seconds,
+        ),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
 
 TAVILY_API_URL = "https://api.tavily.com/search"
 
@@ -67,7 +89,7 @@ async def tavily_search(
     exclude_domains: list[str] | None = None,
 ) -> SearchResponse | None:
     """
-    Perform a web search using Tavily API.
+    Perform a web search using Tavily API with retry logic.
 
     Args:
         query: Search query string
@@ -100,35 +122,42 @@ async def tavily_search(
     if exclude_domains:
         payload["exclude_domains"] = exclude_domains
 
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
+    @_create_retry_decorator()
+    async def _execute_search():
+        async with httpx.AsyncClient(timeout=settings.search_timeout_seconds) as client:
             response = await client.post(TAVILY_API_URL, json=payload)
             response.raise_for_status()
-            data = response.json()
+            return response.json()
 
-            results = [
-                SearchResult(
-                    title=r.get("title", ""),
-                    url=r.get("url", ""),
-                    content=r.get("content", ""),
-                    score=r.get("score", 0.0),
-                    published_date=r.get("published_date"),
-                )
-                for r in data.get("results", [])
-            ]
+    try:
+        data = await _execute_search()
 
-            return SearchResponse(
-                query=query,
-                results=results,
-                answer=data.get("answer"),
-                follow_up_questions=data.get("follow_up_questions"),
+        results = [
+            SearchResult(
+                title=r.get("title", ""),
+                url=r.get("url", ""),
+                content=r.get("content", ""),
+                score=r.get("score", 0.0),
+                published_date=r.get("published_date"),
             )
+            for r in data.get("results", [])
+        ]
+
+        return SearchResponse(
+            query=query,
+            results=results,
+            answer=data.get("answer"),
+            follow_up_questions=data.get("follow_up_questions"),
+        )
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Tavily API HTTP error: {e.response.status_code}")
         return None
+    except httpx.TimeoutException:
+        logger.error(f"Tavily API timeout after {settings.search_timeout_seconds}s")
+        return None
     except httpx.RequestError as e:
-        logger.error(f"Tavily API request error: {e}")
+        logger.error(f"Tavily API request error after retries: {e}")
         return None
     except Exception as e:
         logger.error(f"Tavily search error: {e}")
@@ -142,7 +171,7 @@ def tavily_search_sync(
     include_answer: bool = True,
 ) -> SearchResponse | None:
     """
-    Synchronous version of Tavily search.
+    Synchronous version of Tavily search with retry logic.
 
     Args:
         query: Search query string
@@ -168,30 +197,53 @@ def tavily_search_sync(
         "include_images": False,
     }
 
-    try:
-        with httpx.Client(timeout=30) as client:
+    @retry(
+        stop=stop_after_attempt(settings.retry_max_attempts),
+        wait=wait_exponential(
+            multiplier=1,
+            min=settings.retry_min_wait_seconds,
+            max=settings.retry_max_wait_seconds,
+        ),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
+    def _execute_search():
+        with httpx.Client(timeout=settings.search_timeout_seconds) as client:
             response = client.post(TAVILY_API_URL, json=payload)
             response.raise_for_status()
-            data = response.json()
+            return response.json()
 
-            results = [
-                SearchResult(
-                    title=r.get("title", ""),
-                    url=r.get("url", ""),
-                    content=r.get("content", ""),
-                    score=r.get("score", 0.0),
-                    published_date=r.get("published_date"),
-                )
-                for r in data.get("results", [])
-            ]
+    try:
+        data = _execute_search()
 
-            return SearchResponse(
-                query=query,
-                results=results,
-                answer=data.get("answer"),
-                follow_up_questions=data.get("follow_up_questions"),
+        results = [
+            SearchResult(
+                title=r.get("title", ""),
+                url=r.get("url", ""),
+                content=r.get("content", ""),
+                score=r.get("score", 0.0),
+                published_date=r.get("published_date"),
             )
+            for r in data.get("results", [])
+        ]
 
+        return SearchResponse(
+            query=query,
+            results=results,
+            answer=data.get("answer"),
+            follow_up_questions=data.get("follow_up_questions"),
+        )
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Tavily API HTTP error: {e.response.status_code}")
+        return None
+    except httpx.TimeoutException:
+        logger.error(f"Tavily API timeout after {settings.search_timeout_seconds}s")
+        return None
+    except httpx.RequestError as e:
+        logger.error(f"Tavily API request error after retries: {e}")
+        return None
     except Exception as e:
         logger.error(f"Tavily search error: {e}")
         return None

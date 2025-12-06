@@ -86,12 +86,12 @@ class Settings(BaseSettings):
         description="OpenAI API key for GPT models",
     )
     openai_model_writer: str = Field(
-        default="gpt-4.1-mini",
-        description="OpenAI model for Writer Agent A",
+        default="gpt-5",
+        description="OpenAI model for Writer Agent A and Research Agent",
     )
     openai_model_evaluator: str = Field(
-        default="gpt-4.1",
-        description="OpenAI model for Evaluator Agent",
+        default="o4-mini",
+        description="OpenAI model for Evaluator Agent (reasoning optimized)",
     )
 
     # -------------------------------------------------------------------------
@@ -102,8 +102,8 @@ class Settings(BaseSettings):
         description="Anthropic API key for Claude models",
     )
     anthropic_model_writer: str = Field(
-        default="claude-3-5-haiku-20241022",
-        description="Anthropic model for Writer Agent B",
+        default="claude-sonnet-4-5-20241022",
+        description="Anthropic model for Writer Agent B (Sonnet 4.5)",
     )
 
     # -------------------------------------------------------------------------
@@ -194,6 +194,58 @@ class Settings(BaseSettings):
     db_path: str = Field(
         default="",
         description="Path to SQLite database file (empty = in-memory storage)",
+    )
+
+    # -------------------------------------------------------------------------
+    # Resilience Configuration
+    # -------------------------------------------------------------------------
+    llm_timeout_seconds: int = Field(
+        default=120,
+        ge=10,
+        le=600,
+        description="Timeout for LLM API calls in seconds",
+    )
+    search_timeout_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="Timeout for search API calls in seconds",
+    )
+    retry_max_attempts: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="Maximum retry attempts for external API calls",
+    )
+    retry_min_wait_seconds: int = Field(
+        default=2,
+        ge=1,
+        le=30,
+        description="Minimum wait time between retries in seconds",
+    )
+    retry_max_wait_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="Maximum wait time between retries in seconds",
+    )
+
+    # -------------------------------------------------------------------------
+    # Rate Limiting Configuration
+    # -------------------------------------------------------------------------
+    rate_limit_generate: str = Field(
+        default="10/minute",
+        description="Rate limit for content generation endpoints",
+    )
+    rate_limit_default: str = Field(
+        default="60/minute",
+        description="Default rate limit for other endpoints",
+    )
+    max_concurrent_jobs: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum concurrent background jobs",
     )
 
     @property

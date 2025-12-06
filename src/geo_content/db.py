@@ -54,11 +54,48 @@ class JobDatabase:
         logger.info(f"JobDatabase initialized: {db_path} (max_jobs={max_jobs})")
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Get thread-local database connection."""
+        """Get thread-local database connection with optimized settings."""
         if not hasattr(_local, "connection") or _local.connection is None:
-            _local.connection = sqlite3.connect(self.db_path, check_same_thread=False)
+            _local.connection = sqlite3.connect(
+                self.db_path,
+                timeout=30.0,  # Wait up to 30s for locks
+                check_same_thread=False,
+            )
             _local.connection.row_factory = sqlite3.Row
+            # Enable WAL mode for better concurrency
+            _local.connection.execute("PRAGMA journal_mode=WAL")
+            # Set busy timeout to wait for locks instead of failing immediately
+            _local.connection.execute("PRAGMA busy_timeout=5000")
+            # Enable foreign keys
+            _local.connection.execute("PRAGMA foreign_keys=ON")
+            logger.debug("Created new database connection for thread")
         return _local.connection
+
+    def close_connection(self):
+        """Close the thread-local database connection."""
+        if hasattr(_local, "connection") and _local.connection is not None:
+            try:
+                _local.connection.close()
+                logger.debug("Closed database connection for thread")
+            except Exception as e:
+                logger.warning(f"Error closing database connection: {e}")
+            finally:
+                _local.connection = None
+
+    def health_check(self) -> bool:
+        """
+        Check if database connection is healthy.
+
+        Returns:
+            True if database is accessible, False otherwise
+        """
+        try:
+            with self._cursor() as cursor:
+                cursor.execute("SELECT 1")
+                return True
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
 
     @contextmanager
     def _cursor(self):
@@ -284,6 +321,22 @@ class JobDatabase:
                     (delete_count,),
                 )
                 logger.info(f"Cleaned up {delete_count} old jobs")
+
+    def clear_all_jobs(self) -> int:
+        """
+        Clear all completed jobs from history.
+
+        Returns:
+            Number of jobs deleted
+        """
+        with self._cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) as count FROM jobs WHERE status = 'completed'")
+            count = cursor.fetchone()["count"]
+
+            cursor.execute("DELETE FROM jobs WHERE status = 'completed'")
+            logger.info(f"Cleared {count} completed jobs from history")
+
+        return count
 
 
 # Global database instance (initialized lazily)

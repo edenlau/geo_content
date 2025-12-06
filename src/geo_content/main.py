@@ -4,20 +4,57 @@ FastAPI application entry point for GEO Content Platform.
 
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI
+import structlog
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
+from geo_content.api.exceptions import GEOContentError, RateLimitError
 from geo_content.api.routes import router
 from geo_content.config import settings
+from geo_content.db import get_job_database
 
 # Export API keys to environment for OpenAI Agents SDK
 # The SDK reads directly from os.environ, not from Pydantic settings
 os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)
 os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
+
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
+
+def setup_structured_logging():
+    """Configure structured logging with structlog."""
+    # Configure structlog for JSON output in production
+    processors = [
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+    ]
+
+    if settings.is_production:
+        processors.append(structlog.processors.JSONRenderer())
+    else:
+        processors.append(structlog.dev.ConsoleRenderer())
+
+    structlog.configure(
+        processors=processors,
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
 
 
 def setup_logging() -> logging.Logger:
@@ -76,7 +113,7 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan manager.
 
-    Handles startup and shutdown events.
+    Handles startup and shutdown events with graceful cleanup.
     """
     # Startup
     logger.info("=" * 60)
@@ -91,12 +128,28 @@ async def lifespan(app: FastAPI):
     logger.info(f"E-E-A-T Threshold: {settings.eeat_threshold}")
     logger.info(f"Max Iterations: {settings.max_iterations}")
     logger.info(f"Max Research Iterations: {settings.max_research_iterations}")
+    logger.info(f"Rate Limit (generate): {settings.rate_limit_generate}")
+    logger.info(f"Max Concurrent Jobs: {settings.max_concurrent_jobs}")
     logger.info("=" * 60)
+
+    # Setup structured logging
+    setup_structured_logging()
 
     yield
 
-    # Shutdown
-    logger.info("Shutting down GEO Content Platform...")
+    # Graceful Shutdown
+    logger.info("Initiating graceful shutdown...")
+
+    # Close database connections
+    db = get_job_database()
+    if db:
+        try:
+            db.close_connection()
+            logger.info("Database connections closed")
+        except Exception as e:
+            logger.warning(f"Error closing database connections: {e}")
+
+    logger.info("GEO Content Platform shutdown complete")
 
 
 # Create FastAPI application
@@ -144,6 +197,64 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+
+# Add rate limit exceeded handler
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# Custom exception handlers
+@app.exception_handler(GEOContentError)
+async def geo_content_exception_handler(request: Request, exc: GEOContentError):
+    """Handle custom GEO Content exceptions with structured responses."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error_code": exc.error_code,
+            "message": exc.user_message,
+            "detail": exc.detail if not settings.is_production else None,
+            "timestamp": datetime.utcnow().isoformat(),
+            "correlation_id": getattr(request.state, "correlation_id", None),
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    """Handle unexpected exceptions with safe error messages."""
+    logger.error(
+        f"Unhandled exception: {exc}",
+        exc_info=True,
+        extra={"correlation_id": getattr(request.state, "correlation_id", None)},
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error_code": "INTERNAL_ERROR",
+            "message": "An unexpected error occurred" if settings.is_production else str(exc),
+            "timestamp": datetime.utcnow().isoformat(),
+            "correlation_id": getattr(request.state, "correlation_id", None),
+        },
+    )
+
+
+# Middleware for correlation IDs
+@app.middleware("http")
+async def add_correlation_id(request: Request, call_next):
+    """Add correlation ID to all requests for request tracing."""
+    correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+    request.state.correlation_id = correlation_id
+
+    # Add correlation ID to structlog context
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
+
+    response = await call_next(request)
+    response.headers["X-Correlation-ID"] = correlation_id
+    return response
+
 
 # Include API router
 app.include_router(router)
