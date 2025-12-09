@@ -326,13 +326,13 @@ def get_rewriter_prompt(
 {facts_section or "No additional facts available"}
 
 ### Statistics (Incorporate these to strengthen claims)
-{stats_section or "No statistics available - improve existing statistics if possible"}
+{stats_section or "No new statistics available from research. Keep any well-sourced existing statistics - do NOT invent new ones."}
 
 ### Expert Quotations (Add authority with these)
-{quotes_section or "No quotations available - improve existing quotes if possible"}
+{quotes_section or "No new quotations available from research. Keep any well-attributed existing quotes - do NOT fabricate new quotes or expert opinions."}
 
 ### Credible Sources (Cite these for credibility)
-{citations_section or "No citations available - improve existing citations if possible"}
+{citations_section or "No new citations available from research. Keep any existing credible citations - do NOT invent sources."}
 
 ---
 

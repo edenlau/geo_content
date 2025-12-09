@@ -186,13 +186,13 @@ def get_writer_prompt(
 {facts_section or "No key facts provided"}
 
 ### Statistics (Use these in your content)
-{stats_section or "No statistics provided - find or create appropriate statistics"}
+{stats_section or "No statistics available from research. Use only verified facts from the research material - do NOT invent or fabricate statistics."}
 
 ### Expert Quotations (Incorporate these naturally)
-{quotes_section or "No quotations provided - create appropriate expert perspectives"}
+{quotes_section or "No quotations found in research. Focus on presenting factual information clearly - do NOT fabricate quotes or invent expert opinions."}
 
 ### Credible Sources (Cite these)
-{citations_section or "No citations provided - reference appropriate authoritative sources"}
+{citations_section or "No specific citations provided. Reference the sources mentioned in the research above when making claims - do NOT invent sources."}
 
 ---
 
