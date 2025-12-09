@@ -122,8 +122,8 @@ class Settings(BaseSettings):
         description="Perplexity AI API key for grounded quote search",
     )
     perplexity_model: str = Field(
-        default="sonar-pro",
-        description="Perplexity model for quote search (sonar-pro has 2x more citations)",
+        default="sonar",
+        description="Perplexity model for quote search (sonar is fast and cost-effective)",
     )
 
     # -------------------------------------------------------------------------
