@@ -186,8 +186,17 @@ class GEOContentWorkflow:
                     f"conducting additional research (iteration {research_iteration})"
                 )
 
-                # Conduct additional research focused on E-E-A-T gaps
-                eeat_gaps = self._identify_eeat_gaps(final_result["commentary"].eeat_analysis)
+                # Get quotation and statistics counts from selected draft
+                selected_draft = final_result["draft"]
+                quotations_count = selected_draft.quotations_count
+                statistics_count = selected_draft.statistics_count
+
+                # Conduct additional research focused on E-E-A-T gaps and quote/stat needs
+                eeat_gaps = self._identify_eeat_gaps(
+                    eeat_analysis=final_result["commentary"].eeat_analysis,
+                    quotations_count=quotations_count,
+                    statistics_count=statistics_count,
+                )
                 enhanced_research = await self._conduct_eeat_focused_research(
                     client_name=request.client_name,
                     target_question=request.target_question,
@@ -484,19 +493,26 @@ class GEOContentWorkflow:
             "commentary": commentary,
         }
 
-    def _identify_eeat_gaps(self, eeat_analysis) -> list[str]:
+    def _identify_eeat_gaps(
+        self,
+        eeat_analysis,
+        quotations_count: int = 0,
+        statistics_count: int = 0,
+    ) -> list[str]:
         """
-        Identify which E-E-A-T dimensions are weak.
+        Identify which E-E-A-T dimensions are weak and if quotes/stats are needed.
 
         Args:
             eeat_analysis: EEATAnalysis from commentary
+            quotations_count: Number of quotations in the selected draft
+            statistics_count: Number of statistics in the selected draft
 
         Returns:
-            List of E-E-A-T dimensions that need improvement
+            List of dimensions/elements that need improvement
         """
         gaps = []
 
-        # Check each dimension for weak signals
+        # Check each E-E-A-T dimension for weak signals
         if len(eeat_analysis.experience_signals) < 2:
             gaps.append("experience")
         if len(eeat_analysis.expertise_signals) < 2:
@@ -506,9 +522,23 @@ class GEOContentWorkflow:
         if len(eeat_analysis.trust_signals) < 2:
             gaps.append("trust")
 
+        # Check for insufficient quotations (target: 2-3 for optimal GEO)
+        if quotations_count < 2:
+            gaps.append("quotations")
+            logger.info(
+                f"Quotations gap detected: found {quotations_count}, need at least 2"
+            )
+
+        # Check for insufficient statistics (target: 3-5 for optimal GEO)
+        if statistics_count < 3:
+            gaps.append("statistics")
+            logger.info(
+                f"Statistics gap detected: found {statistics_count}, need at least 3"
+            )
+
         # If overall score is low but no specific gaps, target all dimensions
         if not gaps and eeat_analysis.overall_eeat_score < 6:
-            gaps = ["experience", "expertise", "authority", "trust"]
+            gaps = ["experience", "expertise", "authority", "trust", "quotations", "statistics"]
 
         return gaps
 
@@ -535,7 +565,7 @@ class GEOContentWorkflow:
         Returns:
             Enhanced ResearchBrief with E-E-A-T focused content
         """
-        logger.info(f"Conducting E-E-A-T focused research for gaps: {eeat_gaps}")
+        logger.info(f"Conducting focused research for gaps: {eeat_gaps}")
 
         # Build focused research prompt based on gaps
         gap_instructions = []
@@ -555,6 +585,22 @@ class GEOContentWorkflow:
             gap_instructions.append(
                 "Find verifiable statistics, source attributions, and transparent information"
             )
+        # Specific instruction for quotations gap
+        if "quotations" in eeat_gaps:
+            gap_instructions.append(
+                "PRIORITY: Find direct expert quotations with full attribution "
+                "(speaker name, title, organization). Search for interviews, press releases, "
+                "official statements, and expert commentary. Format: '[Quote]' said [Name], [Title] at [Organization]"
+            )
+            logger.info("Adding quotation-focused search to research")
+        # Specific instruction for statistics gap
+        if "statistics" in eeat_gaps:
+            gap_instructions.append(
+                "PRIORITY: Find verifiable statistics and numerical data with sources. "
+                "Look for percentages, growth figures, rankings, survey results, and official reports. "
+                "Format: According to [Source], [statistic] ([year])"
+            )
+            logger.info("Adding statistics-focused search to research")
 
         # Conduct focused research with enhanced instructions
         return await self.research_agent.conduct_research(
