@@ -21,6 +21,7 @@ from geo_content.models import (
 )
 from geo_content.pipeline.pathway_harvester import PathwayWebHarvester, harvest_urls
 from geo_content.tools.document_parser import parse_documents
+from geo_content.tools.perplexity_search import perplexity_quote_search
 from geo_content.tools.tavily_search import tavily_search
 
 logger = logging.getLogger(__name__)
@@ -279,7 +280,7 @@ The more comprehensive and well-researched your output, the higher the quality s
             logger.info(f"[Research] Reference documents provided: {len(reference_documents)}")
 
         try:
-            # Run the agent
+            # Run the agent for facts, statistics, and citations
             result = await Runner.run(self.agent, research_prompt)
 
             # Parse the result into a ResearchBrief
@@ -290,6 +291,25 @@ The more comprehensive and well-researched your output, the higher the quality s
                 language_code,
                 reference_urls or [],
             )
+
+            # Use Perplexity AI for verified quote search
+            logger.info("[Research] Searching for verified quotes via Perplexity AI")
+            try:
+                perplexity_quotes = await perplexity_quote_search(
+                    topic=target_question,
+                    client_name=client_name,
+                    max_quotes=3,
+                )
+                if perplexity_quotes:
+                    # Prepend verified quotes (they have source URLs)
+                    brief.quotations = perplexity_quotes + list(brief.quotations)
+                    logger.info(
+                        f"[Research] Added {len(perplexity_quotes)} verified quotes from Perplexity"
+                    )
+                else:
+                    logger.info("[Research] Perplexity did not find quotes")
+            except Exception as e:
+                logger.warning(f"[Research] Perplexity quote search failed: {e}")
 
             logger.info(
                 f"[Research] Research completed: {len(brief.key_facts)} facts, "

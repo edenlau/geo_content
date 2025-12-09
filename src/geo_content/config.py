@@ -122,8 +122,8 @@ class Settings(BaseSettings):
         description="Perplexity AI API key for grounded quote search",
     )
     perplexity_model: str = Field(
-        default="llama-3.1-sonar-large-128k-online",
-        description="Perplexity model for quote search (online model with citations)",
+        default="sonar-pro",
+        description="Perplexity model for quote search (sonar-pro has 2x more citations)",
     )
 
     # -------------------------------------------------------------------------
