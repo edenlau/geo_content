@@ -40,6 +40,7 @@ from geo_content.tools.format_exporters import (
 )
 from geo_content.tools.geo_analyzers import geo_insights_analyzer
 from geo_content.tools.language_detector import detect_language
+from geo_content.tools.perplexity_search import perplexity_quote_search
 from geo_content.tools.rtl_formatter import format_rtl_content
 
 logger = logging.getLogger(__name__)
@@ -585,14 +586,6 @@ class GEOContentWorkflow:
             gap_instructions.append(
                 "Find verifiable statistics, source attributions, and transparent information"
             )
-        # Specific instruction for quotations gap
-        if "quotations" in eeat_gaps:
-            gap_instructions.append(
-                "PRIORITY: Find direct expert quotations with full attribution "
-                "(speaker name, title, organization). Search for interviews, press releases, "
-                "official statements, and expert commentary. Format: '[Quote]' said [Name], [Title] at [Organization]"
-            )
-            logger.info("Adding quotation-focused search to research")
         # Specific instruction for statistics gap
         if "statistics" in eeat_gaps:
             gap_instructions.append(
@@ -602,14 +595,54 @@ class GEOContentWorkflow:
             )
             logger.info("Adding statistics-focused search to research")
 
+        # Use Perplexity AI for grounded quote search if quotations gap detected
+        perplexity_quotes = []
+        if "quotations" in eeat_gaps:
+            logger.info("Using Perplexity AI for grounded quote search")
+            try:
+                perplexity_quotes = await perplexity_quote_search(
+                    topic=target_question,
+                    client_name=client_name,
+                    max_quotes=3,
+                )
+                if perplexity_quotes:
+                    logger.info(
+                        f"Perplexity found {len(perplexity_quotes)} verified quotes"
+                    )
+                else:
+                    logger.info("Perplexity did not find verified quotes, falling back to standard search")
+                    # Add standard quote search instruction as fallback
+                    gap_instructions.append(
+                        "PRIORITY: Find direct expert quotations with full attribution "
+                        "(speaker name, title, organization). Search for interviews, press releases, "
+                        "official statements, and expert commentary."
+                    )
+            except Exception as e:
+                logger.warning(f"Perplexity quote search failed: {e}, using standard search")
+                gap_instructions.append(
+                    "PRIORITY: Find direct expert quotations with full attribution "
+                    "(speaker name, title, organization). Search for interviews, press releases, "
+                    "official statements, and expert commentary."
+                )
+
         # Conduct focused research with enhanced instructions
-        return await self.research_agent.conduct_research(
+        enhanced_research = await self.research_agent.conduct_research(
             client_name=client_name,
             target_question=f"{target_question} [Focus on: {', '.join(gap_instructions)}]",
             reference_urls=reference_urls,
             reference_documents=[],
             language_code=language_code,
         )
+
+        # Add Perplexity-verified quotes to the research brief
+        if perplexity_quotes:
+            # Prepend Perplexity quotes (they're verified) to the quotations list
+            enhanced_research.quotations = perplexity_quotes + list(enhanced_research.quotations)
+            logger.info(
+                f"Added {len(perplexity_quotes)} Perplexity-verified quotes to research brief"
+            )
+
+        return enhanced_research
 
     def _merge_research_briefs(
         self,

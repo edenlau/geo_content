@@ -115,6 +115,18 @@ class Settings(BaseSettings):
     )
 
     # -------------------------------------------------------------------------
+    # Perplexity AI Configuration (for grounded quote search)
+    # -------------------------------------------------------------------------
+    perplexity_api_key: str = Field(
+        default="",
+        description="Perplexity AI API key for grounded quote search",
+    )
+    perplexity_model: str = Field(
+        default="llama-3.1-sonar-large-128k-online",
+        description="Perplexity model for quote search (online model with citations)",
+    )
+
+    # -------------------------------------------------------------------------
     # Tracing Configuration
     # -------------------------------------------------------------------------
     openai_agents_disable_tracing: bool = Field(
