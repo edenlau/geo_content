@@ -320,19 +320,23 @@ def get_rewriter_prompt(
 
 ---
 
-## RESEARCH MATERIAL FOR ENHANCEMENT
+## RESEARCH MATERIAL FOR ENHANCEMENT (ALL VERIFIED)
+
+IMPORTANT: All statistics and quotations below have been verified through authoritative sources.
+Use ONLY the content provided here. Do NOT invent, fabricate, or extrapolate additional statistics,
+quotes, or sources. If the sections are empty, keep existing well-sourced content only.
 
 ### Key Facts (Use to add depth)
 {facts_section or "No additional facts available"}
 
-### Statistics (Incorporate these to strengthen claims)
-{stats_section or "No new statistics available from research. Keep any well-sourced existing statistics - do NOT invent new ones."}
+### Statistics (VERIFIED - Incorporate these to strengthen claims)
+{stats_section or "No new verified statistics available. Keep any well-sourced existing statistics from the original - do NOT invent new numbers, percentages, or data points."}
 
-### Expert Quotations (Add authority with these)
-{quotes_section or "No new quotations available from research. Keep any well-attributed existing quotes - do NOT fabricate new quotes or expert opinions."}
+### Expert Quotations (VERIFIED - Add authority with these)
+{quotes_section or "No new verified quotations available. Keep any well-attributed existing quotes from the original - do NOT fabricate new quotes or expert opinions under any circumstances."}
 
 ### Credible Sources (Cite these for credibility)
-{citations_section or "No new citations available from research. Keep any existing credible citations - do NOT invent sources."}
+{citations_section or "No new citations available. Keep any existing credible citations - do NOT invent sources."}
 
 ---
 

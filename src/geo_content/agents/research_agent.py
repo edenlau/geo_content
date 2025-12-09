@@ -330,9 +330,76 @@ The more comprehensive and well-researched your output, the higher the quality s
             except Exception as e:
                 logger.warning(f"[Research] Perplexity statistics search failed: {e}")
 
+            # CRITICAL: Filter to verified-only content to prevent fabrication
+            # Only keep statistics and quotes that have been verified via Perplexity
+            verified_stats = [s for s in brief.statistics if s.verified]
+            verified_quotes = [q for q in brief.quotations if q.verified]
+
+            unverified_stats_count = len(brief.statistics) - len(verified_stats)
+            unverified_quotes_count = len(brief.quotations) - len(verified_quotes)
+
+            if unverified_stats_count > 0 or unverified_quotes_count > 0:
+                logger.info(
+                    f"[Research] Filtering out unverified content: "
+                    f"{unverified_stats_count} stats, {unverified_quotes_count} quotes discarded"
+                )
+
+            # Check if we have insufficient verified content and retry if needed
+            min_stats = 2
+            min_quotes = 1
+            max_retries = 2
+
+            for retry in range(max_retries):
+                if len(verified_stats) >= min_stats and len(verified_quotes) >= min_quotes:
+                    break
+
+                logger.info(
+                    f"[Research] Insufficient verified content (stats={len(verified_stats)}, "
+                    f"quotes={len(verified_quotes)}), retry {retry + 1}/{max_retries}"
+                )
+
+                # Retry with alternative search terms
+                alternative_query = f"{client_name} {target_question} expert opinion statistics data"
+
+                # Retry quotes if needed
+                if len(verified_quotes) < min_quotes:
+                    try:
+                        additional_quotes = await perplexity_quote_search(
+                            topic=alternative_query,
+                            client_name=client_name,
+                            max_quotes=3,
+                        )
+                        if additional_quotes:
+                            verified_quotes.extend(additional_quotes)
+                            logger.info(
+                                f"[Research] Retry found {len(additional_quotes)} additional quotes"
+                            )
+                    except Exception as e:
+                        logger.warning(f"[Research] Quote retry failed: {e}")
+
+                # Retry stats if needed
+                if len(verified_stats) < min_stats:
+                    try:
+                        additional_stats = await perplexity_search_statistics(
+                            topic=alternative_query,
+                            client_name=client_name,
+                            max_stats=5,
+                        )
+                        if additional_stats:
+                            verified_stats.extend(additional_stats)
+                            logger.info(
+                                f"[Research] Retry found {len(additional_stats)} additional statistics"
+                            )
+                    except Exception as e:
+                        logger.warning(f"[Research] Statistics retry failed: {e}")
+
+            # Apply filtered verified content to brief
+            brief.statistics = verified_stats
+            brief.quotations = verified_quotes
+
             logger.info(
                 f"[Research] Research completed: {len(brief.key_facts)} facts, "
-                f"{len(brief.statistics)} stats, {len(brief.quotations)} quotes, "
+                f"{len(brief.statistics)} verified stats, {len(brief.quotations)} verified quotes, "
                 f"{len(brief.citations)} citations"
             )
             return brief

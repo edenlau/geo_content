@@ -180,19 +180,23 @@ def get_writer_prompt(
 
 ---
 
-## RESEARCH MATERIAL
+## RESEARCH MATERIAL (ALL VERIFIED)
+
+IMPORTANT: All statistics and quotations below have been verified through authoritative sources.
+Use ONLY the content provided here. Do NOT invent, fabricate, or extrapolate additional statistics,
+quotes, or sources. If the sections are empty, write content without those elements.
 
 ### Key Facts
 {facts_section or "No key facts provided"}
 
-### Statistics (Use these in your content)
-{stats_section or "No statistics available from research. Use only verified facts from the research material - do NOT invent or fabricate statistics."}
+### Statistics (VERIFIED - Use these in your content)
+{stats_section or "No verified statistics available. Write content WITHOUT statistics - do NOT invent or fabricate any numbers, percentages, or data points."}
 
-### Expert Quotations (Incorporate these naturally)
-{quotes_section or "No quotations found in research. Focus on presenting factual information clearly - do NOT fabricate quotes or invent expert opinions."}
+### Expert Quotations (VERIFIED - Incorporate these naturally)
+{quotes_section or "No verified quotations available. Write content WITHOUT quotes - do NOT fabricate quotes or invent expert opinions under any circumstances."}
 
 ### Credible Sources (Cite these)
-{citations_section or "No specific citations provided. Reference the sources mentioned in the research above when making claims - do NOT invent sources."}
+{citations_section or "No specific citations provided. Reference sources from key facts only - do NOT invent sources."}
 
 ---
 
