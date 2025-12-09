@@ -19,7 +19,7 @@ from tenacity import (
 )
 
 from geo_content.config import settings
-from geo_content.models.schemas import QuotationItem
+from geo_content.models.schemas import QuotationItem, StatisticItem
 
 logger = logging.getLogger(__name__)
 
@@ -421,24 +421,148 @@ Provide the source URL for each quote."""
         return []
 
 
+def _parse_statistics_from_response(content: str, citations: list[str]) -> list[StatisticItem]:
+    """
+    Parse statistics from Perplexity response content.
+
+    Looks for patterns like:
+    - [Number/percentage] ... (Source: [Name], [Year]) [citation]
+    - According to [Source], [statistic]
+    - [Statistic] - [Source] [Year]
+    """
+    statistics = []
+
+    # Pattern 1: "- 7.6 million visitors in 2023 (Source: Tourism Board, 2023) [1]"
+    pattern1 = re.compile(
+        r'[-•*]\s*(.+?\d[\d,\.%]*[^(]+)\s*\((?:Source:\s*)?([^,)]+)(?:,\s*(\d{4}))?\)\s*(?:\[(\d+)\])?',
+        re.MULTILINE,
+    )
+
+    # Pattern 2: "According to [Source], [statistic with number]"
+    pattern2 = re.compile(
+        r'(?:According to|Per)\s+([^,]+),\s*(.+?\d[\d,\.%]+[^.]*)',
+        re.MULTILINE,
+    )
+
+    # Pattern 3: "[Statistic] - [Source] ([Year])" or "[Statistic] [Source], [Year]"
+    pattern3 = re.compile(
+        r'[-•*]\s*(.+?\d[\d,\.%]+[^-–—\n]*)\s*[-–—]\s*([^(\n]+?)(?:\s*\(?(\d{4})\)?)?(?:\s*\[(\d+)\])?$',
+        re.MULTILINE,
+    )
+
+    # Find all matches from pattern 1
+    for match in pattern1.finditer(content):
+        stat_text = match.group(1).strip()
+        source = match.group(2).strip() if match.group(2) else "Perplexity AI"
+        year = match.group(3) if match.group(3) else None
+        citation_idx = int(match.group(4)) - 1 if match.group(4) else None
+
+        # Extract the numeric value
+        value_match = re.search(r'(\d[\d,\.%]*\s*(?:million|billion|thousand|%|percent)?)', stat_text, re.IGNORECASE)
+        value = value_match.group(1) if value_match else stat_text[:50]
+
+        source_url = None
+        if citation_idx is not None and 0 <= citation_idx < len(citations):
+            source_url = citations[citation_idx]
+
+        statistics.append(
+            StatisticItem(
+                value=value,
+                context=stat_text,
+                source=source,
+                year=year,
+                source_url=source_url,
+                verified=True,
+                verification_source="perplexity",
+            )
+        )
+
+    # Find all matches from pattern 2
+    for match in pattern2.finditer(content):
+        source = match.group(1).strip()
+        stat_text = match.group(2).strip()
+
+        value_match = re.search(r'(\d[\d,\.%]*\s*(?:million|billion|thousand|%|percent)?)', stat_text, re.IGNORECASE)
+        value = value_match.group(1) if value_match else stat_text[:50]
+
+        # Extract year if present
+        year_match = re.search(r'\b(20\d{2})\b', stat_text)
+        year = year_match.group(1) if year_match else None
+
+        source_url = citations[0] if citations else None
+
+        statistics.append(
+            StatisticItem(
+                value=value,
+                context=stat_text,
+                source=source,
+                year=year,
+                source_url=source_url,
+                verified=True,
+                verification_source="perplexity",
+            )
+        )
+
+    # Find all matches from pattern 3
+    for match in pattern3.finditer(content):
+        stat_text = match.group(1).strip()
+        source = match.group(2).strip() if match.group(2) else "Perplexity AI"
+        year = match.group(3) if match.group(3) else None
+        citation_idx = int(match.group(4)) - 1 if match.group(4) else None
+
+        value_match = re.search(r'(\d[\d,\.%]*\s*(?:million|billion|thousand|%|percent)?)', stat_text, re.IGNORECASE)
+        value = value_match.group(1) if value_match else stat_text[:50]
+
+        source_url = None
+        if citation_idx is not None and 0 <= citation_idx < len(citations):
+            source_url = citations[citation_idx]
+
+        statistics.append(
+            StatisticItem(
+                value=value,
+                context=stat_text,
+                source=source,
+                year=year,
+                source_url=source_url,
+                verified=True,
+                verification_source="perplexity",
+            )
+        )
+
+    # Deduplicate by value
+    seen_values = set()
+    unique_stats = []
+    for s in statistics:
+        value_key = s.value.lower().replace(",", "").replace(" ", "")
+        if value_key not in seen_values:
+            seen_values.add(value_key)
+            unique_stats.append(s)
+
+    return unique_stats[:5]  # Return max 5 statistics
+
+
 async def perplexity_search_statistics(
     topic: str,
     client_name: str | None = None,
-) -> dict:
+    max_stats: int = 5,
+) -> list[StatisticItem]:
     """
-    Search for statistics and data using Perplexity AI.
+    Search for verified statistics using Perplexity AI.
+
+    Uses the online model which provides grounded, cited responses.
 
     Args:
         topic: The topic to search for statistics about
         client_name: Optional client/entity name to include in search
+        max_stats: Maximum number of statistics to return
 
     Returns:
-        Dictionary with statistics found and their sources
+        List of StatisticItem objects with verified=True
     """
     api_key = settings.perplexity_api_key
     if not api_key:
         logger.warning("Perplexity API key not configured - skipping statistics search")
-        return {"statistics": [], "citations": []}
+        return []
 
     client_context = f" related to {client_name}" if client_name else ""
     prompt = f"""Find 3-5 specific, verifiable statistics about {topic}{client_context}.
@@ -490,12 +614,24 @@ Format each statistic as:
 
         citations = data.get("citations", [])
 
-        return {
-            "content": content,
-            "citations": citations,
-            "topic": topic,
-        }
+        logger.info(f"Perplexity statistics search completed. Content length: {len(content)}, Citations: {len(citations)}")
 
+        # Parse statistics from the response
+        statistics = _parse_statistics_from_response(content, citations)
+
+        logger.info(f"Parsed {len(statistics)} statistics from Perplexity response")
+
+        return statistics[:max_stats]
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Perplexity API HTTP error: {e.response.status_code} - {e.response.text}")
+        return []
+    except httpx.TimeoutException:
+        logger.error(f"Perplexity API timeout after {settings.search_timeout_seconds}s")
+        return []
+    except httpx.RequestError as e:
+        logger.error(f"Perplexity API request error after retries: {e}")
+        return []
     except Exception as e:
         logger.error(f"Perplexity statistics search error: {e}")
-        return {"statistics": [], "citations": [], "error": str(e)}
+        return []

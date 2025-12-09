@@ -21,7 +21,7 @@ from geo_content.models import (
 )
 from geo_content.pipeline.pathway_harvester import PathwayWebHarvester, harvest_urls
 from geo_content.tools.document_parser import parse_documents
-from geo_content.tools.perplexity_search import perplexity_quote_search
+from geo_content.tools.perplexity_search import perplexity_quote_search, perplexity_search_statistics
 from geo_content.tools.tavily_search import tavily_search
 
 logger = logging.getLogger(__name__)
@@ -310,6 +310,25 @@ The more comprehensive and well-researched your output, the higher the quality s
                     logger.info("[Research] Perplexity did not find quotes")
             except Exception as e:
                 logger.warning(f"[Research] Perplexity quote search failed: {e}")
+
+            # Use Perplexity AI for verified statistics search
+            logger.info("[Research] Searching for verified statistics via Perplexity AI")
+            try:
+                perplexity_stats = await perplexity_search_statistics(
+                    topic=target_question,
+                    client_name=client_name,
+                    max_stats=5,
+                )
+                if perplexity_stats:
+                    # Prepend verified statistics (they have source URLs)
+                    brief.statistics = perplexity_stats + list(brief.statistics)
+                    logger.info(
+                        f"[Research] Added {len(perplexity_stats)} verified statistics from Perplexity"
+                    )
+                else:
+                    logger.info("[Research] Perplexity did not find statistics")
+            except Exception as e:
+                logger.warning(f"[Research] Perplexity statistics search failed: {e}")
 
             logger.info(
                 f"[Research] Research completed: {len(brief.key_facts)} facts, "
