@@ -278,11 +278,41 @@ def get_rewriter_prompt(
 """
     else:
         structure_instruction = """
-## STRUCTURE OPTIMIZATION
-- You may reorganize the content for better flow
-- Create new headings that mirror common search queries
-- Restructure paragraphs for optimal AI citation
-- Maintain logical progression of ideas
+## STRUCTURE OPTIMIZATION - CREATE OPTIMIZED HEADINGS & LAYOUT
+
+Since you are restructuring this content for optimal AI visibility, follow these requirements:
+
+### Opening Statement (CRITICAL for visibility)
+- The first 40-50 words MUST directly address the main topic
+- Include the client/entity name within the first sentence
+- Front-load the most important information
+- This opening is weighted heavily in AI citation visibility calculations
+
+### Heading Requirements
+- Create ONE clear H1 heading as the main title (include entity name + core topic)
+- Use 2-4 semantic H2 headings that mirror common search queries
+- H2 headings should read like questions users would ask AI assistants
+- Example H2 patterns for topic "Ocean Park Hong Kong attractions":
+  - "Top Attractions at Ocean Park Hong Kong"
+  - "What Makes Ocean Park Hong Kong Unique"
+  - "Visitor Tips for Ocean Park Hong Kong"
+  - "Why Visit Ocean Park Hong Kong"
+
+### Paragraph Structure
+- Write 2-3 sentence paragraphs with clear topic sentences
+- Each paragraph should express ONE main idea
+- Avoid long, dense paragraphs that are hard for AI to parse and cite
+
+### Content Organization
+- Lead with most important information (inverted pyramid style)
+- Use bullet lists for 3+ related items (features, benefits, options)
+- Use numbered lists for sequential processes or rankings
+- Include a strong closing that reinforces the main message
+
+### Formatting for AI Parsing
+- Use markdown formatting (## for H2, ### for H3, - for bullets)
+- Break up long sections with subheadings
+- Ensure clear visual hierarchy that AI can easily parse
 """
 
     # Client mention instruction
