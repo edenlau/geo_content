@@ -348,10 +348,12 @@ The more comprehensive and well-researched your output, the higher the quality s
             min_stats = 2
             min_quotes = 1
             max_retries = 2
+            retries_performed = 0
 
             for retry in range(max_retries):
                 if len(verified_stats) >= min_stats and len(verified_quotes) >= min_quotes:
                     break
+                retries_performed = retry + 1
 
                 logger.info(
                     f"[Research] Insufficient verified content (stats={len(verified_stats)}, "
@@ -397,10 +399,22 @@ The more comprehensive and well-researched your output, the higher the quality s
             brief.statistics = verified_stats
             brief.quotations = verified_quotes
 
+            # Track verification metrics for commentary
+            brief.verification_stats = {
+                "total_stats_found": len(verified_stats) + unverified_stats_count,
+                "verified_stats": len(verified_stats),
+                "discarded_stats": unverified_stats_count,
+                "total_quotes_found": len(verified_quotes) + unverified_quotes_count,
+                "verified_quotes": len(verified_quotes),
+                "discarded_quotes": unverified_quotes_count,
+                "retry_attempts": retries_performed,
+                "verification_source": "perplexity",
+            }
+
             logger.info(
                 f"[Research] Research completed: {len(brief.key_facts)} facts, "
                 f"{len(brief.statistics)} verified stats, {len(brief.quotations)} verified quotes, "
-                f"{len(brief.citations)} citations"
+                f"{len(brief.citations)} citations, retries={retries_performed}"
             )
             return brief
 

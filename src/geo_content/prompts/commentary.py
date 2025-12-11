@@ -52,6 +52,14 @@ Analyze:
 ### 7. ENHANCEMENT SUGGESTIONS (Optional)
 If there are opportunities for further improvement, list 2-3 actionable suggestions.
 
+### 8. CONTENT VERIFICATION STATUS
+Report on the Perplexity AI verification results:
+- How many statistics were found, verified, and discarded
+- How many quotes were found, verified, and discarded
+- Whether retry was needed due to insufficient verified content
+- Confidence level in content authenticity (High/Medium/Low)
+- Brief summary of the verification process
+
 ## OUTPUT REQUIREMENTS
 
 - Provide the analysis in a clear, readable format
@@ -70,6 +78,7 @@ def get_commentary_prompt(
     alternative_score: float,
     evaluation_details: dict,
     language_code: str,
+    verification_stats: dict | None = None,
 ) -> str:
     """
     Generate the prompt for GEO performance commentary.
@@ -82,11 +91,13 @@ def get_commentary_prompt(
         alternative_score: Score of alternative draft
         evaluation_details: Detailed evaluation data
         language_code: Language code for output
+        verification_stats: Perplexity verification statistics (optional)
 
     Returns:
         Formatted commentary prompt
     """
     language_instruction = _get_commentary_language_instruction(language_code)
+    verification_section = _format_verification_stats(verification_stats)
 
     return f"""
 ## SELECTED CONTENT (Draft {selected_draft}):
@@ -108,6 +119,8 @@ def get_commentary_prompt(
 
 ## DETAILED EVALUATION DATA:
 {_format_evaluation_details(evaluation_details)}
+
+{verification_section}
 
 ---
 
@@ -166,10 +179,42 @@ Output your commentary as JSON with this structure:
     "comparative_advantages": ["advantage1", "advantage2"]
   }},
 
-  "enhancement_suggestions": ["suggestion1", "suggestion2"]
+  "enhancement_suggestions": ["suggestion1", "suggestion2"],
+
+  "verification_status": {{
+    "statistics_verified": 0,
+    "statistics_discarded": 0,
+    "quotes_verified": 0,
+    "quotes_discarded": 0,
+    "retry_needed": false,
+    "retry_attempts": 0,
+    "verification_confidence": "High/Medium/Low",
+    "verification_summary": "Summary of Perplexity AI verification results..."
+  }}
 }}
 ```
 """
+
+
+def _format_verification_stats(verification_stats: dict | None) -> str:
+    """Format Perplexity verification statistics for the prompt."""
+    if not verification_stats:
+        return ""
+
+    lines = [
+        "## PERPLEXITY VERIFICATION RESULTS:",
+        f"- Statistics Found: {verification_stats.get('total_stats_found', 0)}",
+        f"- Statistics Verified: {verification_stats.get('verified_stats', 0)} (via Perplexity AI)",
+        f"- Statistics Discarded: {verification_stats.get('discarded_stats', 0)} (unverified)",
+        f"- Quotes Found: {verification_stats.get('total_quotes_found', 0)}",
+        f"- Quotes Verified: {verification_stats.get('verified_quotes', 0)} (via Perplexity AI)",
+        f"- Quotes Discarded: {verification_stats.get('discarded_quotes', 0)} (unverified)",
+        f"- Retry Attempts: {verification_stats.get('retry_attempts', 0)}",
+        f"- Verification Source: {verification_stats.get('verification_source', 'perplexity')}",
+        "",
+        "IMPORTANT: Use these verification results to assess content authenticity confidence.",
+    ]
+    return "\n".join(lines)
 
 
 def _get_commentary_language_instruction(language_code: str) -> str:

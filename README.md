@@ -10,6 +10,9 @@ Multi-Agent GEO Content Optimization Platform designed to maximize client visibi
 - **Research-Backed Optimization**: Evidence-based GEO strategies with 30-40% visibility improvement
 - **Full Observability**: OpenAI Trace integration for complete workflow tracking
 - **GEO Performance Commentary**: Detailed explanation of optimization decisions
+- **Perplexity AI Verification**: All statistics and quotes verified through grounded search
+- **Verified-Only Content**: Unverified content filtered out before reaching writers
+- **Automatic Retry**: System retries searches if insufficient verified content found
 
 ## Research Foundation
 
@@ -64,7 +67,8 @@ Add these to your `.env` file:
 ```bash
 OPENAI_API_KEY=sk-your-openai-api-key
 ANTHROPIC_API_KEY=sk-ant-your-anthropic-api-key
-TAVILY_API_KEY=tvly-your-tavily-api-key  # Optional, for web search
+TAVILY_API_KEY=tvly-your-tavily-api-key      # Required for web search
+PERPLEXITY_API_KEY=pplx-your-perplexity-key  # Required for content verification
 ```
 
 ## Usage
@@ -219,6 +223,56 @@ asyncio.run(main())
 | Fluency Optimization | +24-30% |
 | Combined (Fluency + Statistics) | +35.8% |
 
+## Content Verification System
+
+The platform implements a bullet-proof content validation system to prevent fabricated statistics and quotes.
+
+### Verification Flow
+
+```
+Reference URLs/Documents → Tavily Search (raw content extraction)
+                                    ↓
+                         Research Agent Parsing (extract stats/quotes)
+                                    ↓
+                         Perplexity AI Verification ← Grounded search with citations
+                                    ↓
+                         ✓ VERIFIED ONLY → Writer Agents
+                                    ↓
+                         If insufficient verified content → AUTO-RETRY (up to 2x)
+```
+
+### How It Works
+
+1. **Tavily Search**: Extracts raw content from reference URLs
+2. **Research Agent Parsing**: Identifies statistics, quotes, and key facts
+3. **Perplexity AI Verification**: Validates each item through grounded search with citations
+4. **Verified-Only Filter**: Discards unverified content before it reaches writers
+5. **Automatic Retry**: If < 2 verified stats or < 1 verified quote, retries with alternative search terms
+
+### Verification Fields
+
+All statistics and quotes include verification metadata:
+
+| Field | Description |
+|-------|-------------|
+| `verified` | Boolean indicating if verified via Perplexity |
+| `verification_source` | "perplexity", "tavily", "document", or null |
+| `source_url` | Direct URL to the source (when available) |
+
+### Minimum Thresholds
+
+| Content Type | Minimum Required | Retry Behavior |
+|--------------|------------------|----------------|
+| Statistics | 2 verified | Retry up to 2x with alternative queries |
+| Quotations | 1 verified | Retry up to 2x with alternative queries |
+
+### What This Means
+
+- **All statistics are grounded**: Every number comes with a verified source URL
+- **All quotes are authentic**: Expert quotations validated through Perplexity AI
+- **No fabrication possible**: Writers only receive verified content
+- **Automatic quality assurance**: System retries if verification results are insufficient
+
 ## Architecture
 
 ```
@@ -269,7 +323,27 @@ MIT License - See LICENSE file for details.
 
 ## Version
 
-3.3.0
+3.4.0
+
+## Changelog
+
+### v3.4.0 (December 10, 2025)
+
+- Added Perplexity AI content verification system
+- Implemented verified-only filtering for statistics and quotes
+- Added automatic retry mechanism for insufficient verified content
+- Source URLs now extracted and included for all verified content
+- Updated writer prompts with explicit verification notices
+
+### v3.3.0 (December 6, 2025)
+
+- Content rewrite workflow with style/tone control
+- URL content fetching for rewrite source
+
+### v3.2.0
+
+- GEO Performance Commentary
+- Enhanced E-E-A-T scoring
 
 ---
 

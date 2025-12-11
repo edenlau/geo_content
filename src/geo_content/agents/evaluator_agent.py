@@ -127,6 +127,7 @@ class EvaluatorAgent:
         selected_draft: str,
         evaluation_result: EvaluationResult,
         language_code: str,
+        verification_stats: dict | None = None,
     ) -> GEOPerformanceCommentary:
         """
         Generate detailed GEO performance commentary.
@@ -137,6 +138,7 @@ class EvaluatorAgent:
             selected_draft: "A" or "B"
             evaluation_result: Evaluation result data
             language_code: Language code for output
+            verification_stats: Perplexity verification statistics (optional)
 
         Returns:
             GEOPerformanceCommentary with detailed analysis
@@ -170,6 +172,7 @@ class EvaluatorAgent:
             alternative_score=alternative_score,
             evaluation_details=evaluation_details,
             language_code=language_code,
+            verification_stats=verification_stats,
         )
 
         logger.info(
@@ -342,6 +345,7 @@ class EvaluatorAgent:
             EEATAnalysis,
             GEOStrategyAnalysis,
             StructureAnalysis,
+            VerificationStatus,
         )
 
         # Parse strategy analysis
@@ -402,6 +406,21 @@ class EvaluatorAgent:
             comparative_advantages=comp_data.get("comparative_advantages", []),
         )
 
+        # Parse verification status
+        verification_status = None
+        verif_data = data.get("verification_status", {})
+        if verif_data:
+            verification_status = VerificationStatus(
+                statistics_verified=verif_data.get("statistics_verified", 0),
+                statistics_discarded=verif_data.get("statistics_discarded", 0),
+                quotes_verified=verif_data.get("quotes_verified", 0),
+                quotes_discarded=verif_data.get("quotes_discarded", 0),
+                retry_needed=verif_data.get("retry_needed", False),
+                retry_attempts=verif_data.get("retry_attempts", 0),
+                verification_confidence=verif_data.get("verification_confidence", "High"),
+                verification_summary=verif_data.get("verification_summary", ""),
+            )
+
         return GEOPerformanceCommentary(
             overall_assessment=data.get("overall_assessment", "Content evaluated for GEO optimization"),
             predicted_visibility_improvement=data.get("predicted_visibility_improvement", "25-35%"),
@@ -412,6 +431,7 @@ class EvaluatorAgent:
             key_strengths=data.get("key_strengths", []),
             comparison=comparison,
             enhancement_suggestions=data.get("enhancement_suggestions", []),
+            verification_status=verification_status,
             commentary_language=language_code,
         )
 
@@ -544,6 +564,7 @@ async def generate_commentary(
     selected_draft: str,
     evaluation_result: EvaluationResult,
     language_code: str,
+    verification_stats: dict | None = None,
 ) -> GEOPerformanceCommentary:
     """Convenience function to generate commentary."""
     return await evaluator_agent.generate_commentary(
@@ -552,4 +573,5 @@ async def generate_commentary(
         selected_draft=selected_draft,
         evaluation_result=evaluation_result,
         language_code=language_code,
+        verification_stats=verification_stats,
     )

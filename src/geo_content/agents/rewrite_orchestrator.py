@@ -465,6 +465,7 @@ class GEORewriteWorkflow:
             selected_draft="A",
             evaluation_result=evaluation,
             language_code=language_code,
+            verification_stats=research_brief.verification_stats if research_brief else None,
         )
 
         return {

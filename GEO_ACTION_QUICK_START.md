@@ -178,6 +178,50 @@ Gap: -4 citations (you have 2, target is 6)
 
 ---
 
+## Content Verification System (NEW)
+
+GEO Action now includes a **bullet-proof content validation system** to prevent fabricated statistics and quotes:
+
+### How It Works
+
+```
+Reference URLs/Documents → Tavily Search (raw content extraction)
+                                    ↓
+                         Research Agent Parsing (extract stats/quotes)
+                                    ↓
+                         Perplexity AI Verification ← Grounded search with citations
+                                    ↓
+                         ✓ VERIFIED ONLY → Writer Agents
+                                    ↓
+                         If insufficient verified content → AUTO-RETRY (up to 2x)
+```
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Verified-Only Filtering** | Only Perplexity-verified statistics and quotes reach the writer agents |
+| **Automatic Retry** | If < 2 verified stats or < 1 verified quote, system automatically retries with alternative search terms |
+| **Source URLs** | All verified content includes source URLs for transparency |
+| **No Fabrication** | Unverified content is discarded; writers cannot cite unverified claims |
+
+### What This Means for You
+
+1. **All statistics are grounded** - Every number comes with a verified source URL
+2. **All quotes are authentic** - Expert quotations are validated through Perplexity AI's grounded search
+3. **No invented sources** - Writers only receive verified content; empty sections trigger "do not fabricate" instructions
+4. **Automatic quality assurance** - The system retries searches if verification results are insufficient
+
+### Verification Status in Output
+
+When you receive generated content:
+
+- Statistics and quotes have been **verified** through authoritative sources
+- Source URLs are available in the API response (`source_url` field)
+- `verified: true` and `verification_source: "perplexity"` flags confirm validation
+
+---
+
 ## Measuring Success (7-14 Days After Publishing)
 
 ### Test 1: Direct AI Testing (5 minutes)
@@ -432,6 +476,11 @@ Publishing:
 
 ---
 
-**Version:** 1.0 | December 2, 2025
+**Version:** 1.1 | December 10, 2025
+
+**Changelog:**
+
+- v1.1: Added Perplexity AI content verification system (verified-only filtering, auto-retry mechanism)
+- v1.0: Initial release
 
 **TL;DR:** Generate content → Implement High Priority items → Aim for 85%+ competitive → Inject schema → Publish → Test in 7 days = 30-60% more AI visibility 🚀
